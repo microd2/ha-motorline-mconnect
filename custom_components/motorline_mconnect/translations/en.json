@@ -1,0 +1,28 @@
+{
+    "title": "Motorline MConnect",
+    "config": {
+      "step": {
+        "user": {
+          "title": "Sign in to MConnect",
+          "description": "Enter your Motorline MConnect username and password.",
+          "data": {
+            "username": "Username",
+            "password": "Password"
+          }
+        },
+        "provider": {
+          "title": "Email MFA provider",
+          "description": "Choose the mailbox provider where MConnect sends your MFA code.",
+          "data": {
+            "provider": "Provider"
+          }
+        }
+      },
+      "error": {
+        "auth": "Authentication failed",
+        "connection": "Connection error",
+        "unknown": "Unexpected error"
+      }
+    }
+  }
+  

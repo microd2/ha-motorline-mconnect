@@ -1,46 +1,61 @@
-# Notice
+# Home Assistant Custom Integration: Motorline MCONNECT
 
-The component and platforms in this repository are not meant to be used by a
-user, but as a "blueprint" that custom component developers can build
-upon, to make more awesome stuff.
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
 
-HAVE FUN! 😎
+This is an **unofficial** [Home Assistant](https://www.home-assistant.io/) custom integration for [Motorline MCONNECT](https://mconnect.motorline.pt/).  
+It allows control of compatible MCONNECT devices (e.g., shutters, lights) directly from Home Assistant.
 
-## Why?
+---
 
-This is simple, by having custom_components look (README + structure) the same
-it is easier for developers to help each other and for users to start using them.
+## Features
+- Control supported MCONNECT devices from Home Assistant
+- Periodic status updates (default: every 3 minutes)
+- Secure credential handling via Home Assistant’s Config Entry system
 
-If you are a developer and you want to add things to this "blueprint" that you think more
-developers will have use for, please open a PR to add it :)
+---
 
-## What?
+## Installation
 
-This repository contains multiple files, here is a overview:
+### HACS (recommended)
+1. Go to **HACS → Integrations** in your Home Assistant UI.
+2. Select the three-dot menu → **Custom repositories**.
+3. Add this repository URL and select **Integration**.
+4. Search for **MCONNECT** in HACS and install.
 
-File | Purpose | Documentation
--- | -- | --
-`.devcontainer.json` | Used for development/testing with Visual Studio Code. | [Documentation](https://code.visualstudio.com/docs/remote/containers)
-`.github/ISSUE_TEMPLATE/*.yml` | Templates for the issue tracker | [Documentation](https://help.github.com/en/github/building-a-strong-community/configuring-issue-templates-for-your-repository)
-`custom_components/integration_blueprint/*` | Integration files, this is where everything happens. | [Documentation](https://developers.home-assistant.io/docs/creating_component_index)
-`CONTRIBUTING.md` | Guidelines on how to contribute. | [Documentation](https://help.github.com/en/github/building-a-strong-community/setting-guidelines-for-repository-contributors)
-`LICENSE` | The license file for the project. | [Documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/licensing-a-repository)
-`README.md` | The file you are reading now, should contain info about the integration, installation and configuration instructions. | [Documentation](https://help.github.com/en/github/writing-on-github/basic-writing-and-formatting-syntax)
-`requirements.txt` | Python packages used for development/lint/testing this integration. | [Documentation](https://pip.pypa.io/en/stable/user_guide/#requirements-files)
+### Manual
+1. Clone or download this repository.
+2. Copy the `custom_components/mconnect` folder into your Home Assistant `custom_components` directory.
+3. Restart Home Assistant.
 
-## How?
+---
 
-1. Create a new repository in GitHub, using this repository as a template by clicking the "Use this template" button in the GitHub UI.
-1. Open your new repository in Visual Studio Code devcontainer (Preferably with the "`Dev Containers: Clone Repository in Named Container Volume...`" option).
-1. Rename all instances of the `integration_blueprint` to `custom_components/<your_integration_domain>` (e.g. `custom_components/awesome_integration`).
-1. Rename all instances of the `Integration Blueprint` to `<Your Integration Name>` (e.g. `Awesome Integration`).
-1. Run the `scripts/develop` to start HA and test out your new integration.
+## Configuration
+1. In Home Assistant, go to **Settings → Devices & Services**.
+2. Add a new integration and search for **MCONNECT**.
+3. Enter your **MCONNECT username and password**.  
+   - These credentials are stored locally in Home Assistant’s storage (/config/.storage) to enable automatic re-login and MFA. Storage is not encrypted; it’s protected by your system’s file permissions. If you’re not comfortable with this, do not use this integration.
+4. Once connected, your devices will appear as Home Assistant entities.
 
-## Next steps
+---
 
-These are some next steps you may want to look into:
-- Add tests to your integration, [`pytest-homeassistant-custom-component`](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component) can help you get started.
-- Add brand images (logo/icon) to https://github.com/home-assistant/brands.
-- Create your first release.
-- Share your integration on the [Home Assistant Forum](https://community.home-assistant.io/).
-- Submit your integration to [HACS](https://hacs.xyz/docs/publish/start).
+## Disclaimer
+
+- This integration is **unofficial** and **not affiliated with or endorsed by Motorline**.  
+- It uses the same web endpoints as the official MCONNECT web app.  
+- Because MCONNECT does not provide a public API, this integration may stop working at any time without notice.  
+- No credentials or data are transmitted anywhere except directly to Motorline’s official servers.  
+- This integration does not collect or send any usage analytics.  
+
+**Use at your own risk. Neither the author(s) of this integration nor the Home Assistant project are responsible for any issues, damages, or malfunctions caused by its use.**
+
+---
+
+## Support
+If you encounter issues:
+- Enable debug logging for `custom_components.mconnect` and check your Home Assistant logs.
+- Open an issue in this repository with details about your setup.
+
+---
+
+## License
+[MIT License](LICENSE)
