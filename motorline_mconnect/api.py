@@ -35,7 +35,6 @@ class MConnectCommError(MConnectError):
     pass  # timeouts, connection issues
 
 
-
 # ----- Endpoints (replace with your actual ones) -----
 BASE_URL = "https://api.mconnect.motorline.pt"
 LOGIN_URL = f"{BASE_URL}/auth/login"  # TODO: confirm
