@@ -1,32 +1,30 @@
 # Coordinator with ±15% jitter, exponential backoff, and always-on auto-relogin
 from __future__ import annotations
 
-from datetime import timedelta
-import random
 import logging
+import random
+import time
+from datetime import timedelta
 
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD
-
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-import time
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from .const import CONF_MCONNECT_TOKENS
-
-
-from .const import (
-    DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
-)
 from .api import (
-    MConnectClient,
     MConnectAuthError,
-    MConnectRateLimitError,
-    MConnectServerError,
+    MConnectClient,
     MConnectCommError,
     MConnectError,
+    MConnectRateLimitError,
+    MConnectServerError,
+)
+from .const import (
+    CONF_EMAIL_OAUTH,
+    CONF_EMAIL_PROVIDER,
+    CONF_MCONNECT_TOKENS,
+    DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,15 +34,16 @@ REFRESH_SKEW_SECONDS = 300  # refresh 5 minutes early
 class MConnectCoordinator(DataUpdateCoordinator[dict]):
     """Fetches snapshots; handles jitter, backoff, and forced auto-relogin."""
 
-    def __init__(self, hass: HomeAssistant, entry, user_agent: str, timezone: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry, user_agent: str, timezone: str
+    ) -> None:
         self.entry = entry
-        
+
         self.client = MConnectClient(
             async_get_clientsession(hass),
-            user_agent=user_agent,          # 👈 pass through
-            timezone=timezone,              # 👈 pass through
+            user_agent=user_agent,  # 👈 pass through
+            timezone=timezone,  # 👈 pass through
         )
-        
 
         # Base polling config
         self._base_interval_seconds = 90
@@ -71,7 +70,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
     def _apply_success_interval(self) -> None:
         self._current_interval_seconds = self._base_interval_seconds
         self.update_interval = self._jittered_interval()
-        _LOGGER.debug("Polling interval reset to base with jitter: %s", self.update_interval)
+        _LOGGER.debug(
+            "Polling interval reset to base with jitter: %s", self.update_interval
+        )
 
     def _apply_backoff_interval(self, reason: str) -> None:
         self._current_interval_seconds = min(
@@ -83,7 +84,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         self.update_interval = timedelta(seconds=max(5, secs))
         _LOGGER.warning(
             "Backoff due to %s; next update in ~%s seconds (cap %s).",
-            reason, secs, self._max_backoff_seconds,
+            reason,
+            secs,
+            self._max_backoff_seconds,
         )
 
     # ----- main update -----
@@ -159,12 +162,14 @@ def _tokens_need_refresh(self, tokens: dict) -> bool:
         return True
     return (int(exp) - int(time.time())) <= REFRESH_SKEW_SECONDS
 
+
 async def _save_tokens(self, new_tokens: dict) -> None:
     """Persist updated tokens back to the config entry."""
     new_data = dict(self.entry.data)
     new_data[CONF_MCONNECT_TOKENS] = new_tokens
     # Persist to HA's storage
     self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+
 
 async def async_ensure_fresh_tokens(self) -> dict:
     """
@@ -188,7 +193,9 @@ async def async_ensure_fresh_tokens(self) -> dict:
     # Prefer home refresh
     try:
         if home_id and home_refresh:
-            new_home = await self.client.async_refresh_home_tokens(home_id, home_refresh)
+            new_home = await self.client.async_refresh_home_tokens(
+                home_id, home_refresh
+            )
             # carry forward user refresh for fallback later
             new_home["user_refresh"] = user_refresh
             await self._save_tokens(new_home)

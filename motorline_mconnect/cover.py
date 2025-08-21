@@ -1,10 +1,15 @@
 from homeassistant.components.cover import CoverEntity, CoverEntityFeature
+
+from .entity import MConnectEntity
 from .models import CoverDevice
+
 
 class MConnectCover(MConnectEntity, CoverEntity):
     def __init__(self, coordinator, entry, obj: CoverDevice):
         super().__init__(coordinator, entry, obj, kind="covers")
-        feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+        feats = (
+            CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
+        )
         if obj.supports_position:
             feats |= CoverEntityFeature.SET_POSITION
         self._attr_supported_features = feats
@@ -17,7 +22,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
 
     @property
     def current_cover_position(self) -> int | None:
-        return self._obj.position  # shows 0–100 in HA UI
+        return self._obj.position  # shows 0-100 in HA UI
 
     async def async_open_cover(self, **kwargs):
         await self.coordinator.async_execute_with_auth(
@@ -52,6 +57,6 @@ class MConnectCover(MConnectEntity, CoverEntity):
         )
         # optimistic
         self._obj.position = pos
-        self._obj.is_closed = (pos == 0)
+        self._obj.is_closed = pos == 0
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

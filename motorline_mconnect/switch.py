@@ -1,13 +1,17 @@
 from __future__ import annotations
+
 from homeassistant.components.switch import SwitchEntity
+
 from .const import DOMAIN
 from .entity import MConnectEntity
 from .models import SwitchDevice
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     items: list[SwitchDevice] = coordinator.data.get("switches", [])
     async_add_entities([MConnectSwitch(coordinator, entry, it) for it in items])
+
 
 class MConnectSwitch(MConnectEntity, SwitchEntity):
     def __init__(self, coordinator, entry, obj: SwitchDevice):

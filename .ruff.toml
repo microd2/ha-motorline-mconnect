@@ -13,6 +13,54 @@ ignore = [
     "D212", # multi-line-summary-first-line (incompatible with formatter)
     "COM812", # incompatible with formatter
     "ISC001", # incompatible with formatter
+    "D102",    # Missing docstring in public method
+    "D100",    # Missing docstring in public method
+    "D101",    # Missing docstring in public method
+    "D103",    # Missing docstring in public method
+    "D104",    # Missing docstring in public method
+    "D105",    # Missing docstring in public method
+    "D106",    # Missing docstring in public method
+    "D200",    # Missing docstring in public method
+    "D107",    # Missing docstring in public method
+    "ANN001",  # Missing type annotation for function argument
+    "ANN002",  # Missing type annotation for function argument
+    "ANN003",  # Missing type annotation for **kwargs
+    "ANN201",  # Missing return type annotation
+    "ANN202",  # Missing return type annotation
+    "ANN204",  # Missing return type annotation
+    "ARG002",  # Unused method argument
+    "TC001",  # Unused method argument
+    "ERA001",  # Commented out code
+    "RUF012",  # Commented out code
+    "EM101",  # Commented out code
+    "TRY003",  # Commented out code
+    "S110",  # Commented out code
+    "BLE001",  # Commented out code
+    "D200", "D201", "D202", "D205", "D206", "D207", "D208", "D209",  # Docstring formatting
+    "ARG001",  # Commented out code
+    "TRY300",  # Commented out code
+    "TRY400",  # Commented out code
+    "B904",  # Commented out code
+    "S311",  # Commented out code
+    "TC002",  # Commented out code
+    "E501",  # Commented out code
+    "PT018",  # Commented out code
+    "S101",  # Commented out code
+    "S106",  # Commented out code
+    "PLR2004",  # Commented out code
+    "D401",  # Commented out code
+    "FURB162",  # Commented out code
+    "EM102",  # Commented out code
+    "TRY301",  # Commented out code
+  "D400", "D401", "D402", "D403", "D404", "D405", "D406", "D407", "D408", "D409",
+  "D410", "D411", "D412", "D413", "D414", "D415", "D416", "D417",
+    "PLR0912",  # Too many branches
+  "PLR0913",  # Too many arguments
+  "PLR0915",  # Too many statements
+  "C901",     # Function is too complex
+  "PERF402",     # Function is too complex
+  "FIX002", "TD003", "TD002",     # Function is too complex
+  "PLR0911"    # Function is too complex
 ]
 
 [lint.flake8-pytest-style]

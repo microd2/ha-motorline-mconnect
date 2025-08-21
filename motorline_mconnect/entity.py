@@ -1,8 +1,11 @@
 # custom_components/motorline_mconnect/entity.py
 from __future__ import annotations
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import DOMAIN
+
 
 class MConnectEntity(CoordinatorEntity):
     _attr_has_entity_name = True

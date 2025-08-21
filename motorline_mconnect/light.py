@@ -1,13 +1,17 @@
 from __future__ import annotations
+
 from homeassistant.components.light import LightEntity
+
 from .const import DOMAIN
 from .entity import MConnectEntity
 from .models import LightDevice
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     items: list[LightDevice] = coordinator.data.get("lights", [])
     async_add_entities([MConnectLight(coordinator, entry, it) for it in items])
+
 
 class MConnectLight(MConnectEntity, LightEntity):
     _attr_supported_color_modes = {"onoff"}
