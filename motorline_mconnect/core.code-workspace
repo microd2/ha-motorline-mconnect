@@ -1,0 +1,16 @@
+{
+    "folders": [
+        {
+            "name": "core",
+            "path": "../../.."
+        },
+        {
+            "name": "custom_components",
+            "path": ".."
+        },
+        {
+            "name": "motorline_mconnect",
+            "path": "."
+        }
+    ]
+}

@@ -1,16 +1,16 @@
 {
   "domain": "motorline_mconnect",
   "name": "Motorline MConnect",
-  "version": "0.1.0",
   "codeowners": [
     "@microd2"
   ],
   "config_flow": true,
+  "dependencies": ["application_credentials", "auth"],
   "documentation": "https://github.com/microd2/motorline_mconnect",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/microd2/motorline_mconnect/issues",
-  "dependencies": ["application_credentials", "auth"],
   "requirements": [
     "aiohttp>=3.9.0"
-  ]
+  ],
+  "version": "0.1.0"
 }
