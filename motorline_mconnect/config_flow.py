@@ -88,6 +88,41 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._username = self._reauth_entry.data.get(CONF_USERNAME)
             self._password = self._reauth_entry.data.get(CONF_PASSWORD)
             self._provider = self._reauth_entry.data.get(CONF_EMAIL_PROVIDER)
+            stored_oauth = self._reauth_entry.data.get(CONF_EMAIL_OAUTH)
+            stored_mconnect = self._reauth_entry.data.get(CONF_MCONNECT_TOKENS)
+            
+            # Try refreshing existing tokens first (like C# RefreshTokenAsync)
+            if stored_mconnect and stored_mconnect.get("refresh_token"):
+                session = async_get_clientsession(self.hass)
+                timezone = str(self.hass.config.time_zone)
+                client = MConnectClient(session, "HomeAssistant", timezone)
+                
+                try:
+                    # Attempt to refresh home tokens
+                    home_id = stored_mconnect.get("home_id")
+                    refresh_token = stored_mconnect.get("refresh_token")
+                    
+                    if home_id and refresh_token:
+                        refreshed_tokens = await client.async_refresh_home_tokens(home_id, refresh_token)
+                        
+                        # Update entry with refreshed tokens
+                        entry_data = dict(self._reauth_entry.data)
+                        entry_data[CONF_MCONNECT_TOKENS] = refreshed_tokens
+                        
+                        return self.async_update_reload_and_abort(self._reauth_entry, data=entry_data)
+                        
+                except MConnectAuthError:
+                    # Token refresh failed, fall through to full re-authentication
+                    pass
+                except Exception:
+                    # Any other error, fall through to full re-authentication
+                    pass
+            
+            # If token refresh fails or no tokens, use existing OAuth tokens if valid
+            if stored_oauth:
+                self._oauth_tokens = stored_oauth
+                return await self._finish_login()
+        
         # Re-run OAuth to refresh mailbox tokens, then finish login
         if self._provider in (AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT):
             return await self.async_step_oauth()
@@ -96,10 +131,41 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _finish_login(self) -> ConfigFlowResult:
         assert self._username and self._password and self._provider and self._oauth_tokens
         
-        # TODO: Temporarily bypass API calls for testing - re-enable for production
-        # For now, just create fake tokens and account info
-        tokens = {"access_token": "fake_mconnect_token", "refresh_token": "fake_refresh"}
-        account_info = {"account_id": f"test_{self._username.lower()}"}
+        session = async_get_clientsession(self.hass)
+        timezone = str(self.hass.config.time_zone)
+        client = MConnectClient(session, "HomeAssistant", timezone)
+        
+        try:
+            # Step 1: Initial login (triggers MFA email)
+            await client.async_begin_login(self._username, self._password)
+            
+            # Step 2: Complete login with mailbox MFA + get home tokens
+            tokens = await client.async_complete_login_with_mailbox(
+                provider=self._provider, 
+                oauth_tokens=self._oauth_tokens
+            )
+            
+            # Step 3: Get account info for unique_id
+            account_info = await client.async_get_account_info(tokens)
+            
+        except MConnectAuthError as e:
+            return self.async_show_form(
+                step_id="user",
+                errors={"base": "invalid_auth"},
+                description_placeholders={"error": str(e)}
+            )
+        except MConnectCommError as e:
+            return self.async_show_form(
+                step_id="user", 
+                errors={"base": "cannot_connect"},
+                description_placeholders={"error": str(e)}
+            )
+        except Exception as e:
+            return self.async_show_form(
+                step_id="user",
+                errors={"base": "unknown"},
+                description_placeholders={"error": str(e)}
+            )
 
         unique_id = account_info.get("account_id", self._username.lower())
         await self.async_set_unique_id(unique_id)

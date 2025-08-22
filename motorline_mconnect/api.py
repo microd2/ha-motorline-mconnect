@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import time
-from datetime import UTC, datetime
-from re import compile as re_compile
 from typing import Literal
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
 from .models import CoverDevice, DeviceMeta, LightDevice, SwitchDevice
+from .mfa import wait_for_mfa_code
 
 
 # ----- Exceptions used by coordinator/backoff -----
@@ -42,7 +40,6 @@ VERIFY_URL = f"{BASE_URL}/user/mfa/verify"
 RESET_URL = f"{BASE_URL}/user/trusted_devices/reset"
 RESET_CODE_URL = f"{BASE_URL}/user/trusted_devices/reset/{{code}}"
 REMOVE_THIS_DEVICE_URL = f"{BASE_URL}/user/trusted_device"
-_OTP_RE = re_compile(r"\b(\d{6})\b")
 HOMES_URL = f"{BASE_URL}/homes"
 HOMES_TOKEN_URL = f"{BASE_URL}/homes/auth/token"
 USER_REFRESH_URL = f"{BASE_URL}/auth/token/refresh"
@@ -116,39 +113,19 @@ class MConnectClient:
 
         async def _poll_for_code(kind: str) -> str:
             """
-            kind: "verification" or "end_all"
-            Accept only OTP emails that arrived after we started this login attempt (with small skew),
-            and not older than 5 minutes.
+            kind: "verification" or "end_all"  
+            Use the new MFA module for robust email polling.
             """
-            deadline = time.monotonic() + 300  # 5 minutes
-            min_ts = started_at - 30  # allow 30s skew before we pressed 'login'
-            while time.monotonic() < deadline:
-                # now returns (body, subject, sender, received_ts)
-                body, subject, sender, received_ts = await self._fetch_latest_otp_email(
-                    provider, oauth_tokens
+            try:
+                return await wait_for_mfa_code(
+                    session=self._session,
+                    provider=provider,
+                    oauth_tokens=oauth_tokens,
+                    code_type=kind,
+                    timeout=300  # 5 minutes
                 )
-                if body:
-                    subj = (subject or "").lower()
-                    sndr = (sender or "").lower()
-                    fresh_enough = (received_ts or 0) >= min_ts and (
-                        time.time() - (received_ts or 0)
-                    ) <= 5 * 60
-
-                    if sndr == "noreply@mconnect.pt" and fresh_enough:
-                        if kind == "verification" and "verification code" in subj:
-                            m = _OTP_RE.search(body or "")
-                            if m:
-                                return m.group(1)
-                        if kind == "end_all" and "end all sessions" in subj:
-                            m = _OTP_RE.search(body or "")
-                            if m:
-                                return m.group(1)
-
-                await asyncio.sleep(5)
-
-            raise MConnectAuthError(
-                f"Timed out waiting for {kind.replace('_', ' ')} email (5 minutes)."
-            )
+            except TimeoutError as e:
+                raise MConnectAuthError(str(e)) from e
 
         # ---- 1) normal verification ----
         verif_code = await _poll_for_code("verification")
@@ -270,151 +247,6 @@ class MConnectClient:
         except ClientError as e:
             raise MConnectCommError(f"MFA submit connection error: {e}") from e
 
-    async def _mail_list_messages(
-        self, provider: str, oauth_tokens: dict
-    ) -> list[dict]:
-        """
-        Return a small list of recent message stubs with consistent keys:
-          [{ "id": str, "subject": str, "from": str, "body_preview": str, "received_ts": int, "has_full": bool }]
-        """
-        access_token = oauth_tokens.get("token", {}).get(
-            "access_token"
-        ) or oauth_tokens.get("access_token")
-        if not access_token:
-            return []
-        auth = {"Authorization": f"Bearer {access_token}"}
-
-        if provider.endswith("_gmail"):
-            # Recent messages from sender + subjects of interest (last ~2 days)
-            q = 'from:noreply@mconnect.pt subject:(verification OR "end all sessions") newer_than:2d'
-            url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
-            params = {"q": q, "maxResults": 10}
-            async with self._session.get(
-                url, headers=auth, params=params, timeout=ClientTimeout(total=15)
-            ) as resp:
-                data = await resp.json()
-            msgs = []
-            for m in data.get("messages") or []:
-                mid = m.get("id")
-                if mid:
-                    # Gmail received_ts will be filled in _mail_get_message (from internalDate)
-                    msgs.append(
-                        {
-                            "id": mid,
-                            "subject": "",
-                            "from": "",
-                            "body_preview": "",
-                            "received_ts": 0,
-                            "has_full": False,
-                        }
-                    )
-            return msgs
-
-        if provider.endswith("_microsoft"):
-            # Newest first; include receivedDateTime so we can filter by time
-            url = "https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages?$top=20&$orderby=receivedDateTime desc"
-            async with self._session.get(
-                url, headers=auth, timeout=ClientTimeout(total=15)
-            ) as resp:
-                data = await resp.json()
-            msgs = []
-            for item in data.get("value") or []:
-                subj = item.get("subject") or ""
-                sender = (item.get("from", {}) or {}).get("emailAddress", {}).get(
-                    "address"
-                ) or ""
-                preview = item.get("bodyPreview") or ""
-                rts = _parse_iso_to_epoch(item.get("receivedDateTime"))
-                body = preview or (item.get("body", {}) or {}).get("content") or ""
-                msgs.append(
-                    {
-                        "id": item.get("id"),
-                        "subject": subj,
-                        "from": sender,
-                        "body_preview": body,
-                        "received_ts": rts,
-                        "has_full": True,  # Graph already gave us usable content
-                    }
-                )
-            return msgs
-
-        return []
-
-    async def _mail_get_message(
-        self, provider: str, oauth_tokens: dict, msg_stub: dict
-    ) -> tuple[str, str, str, int]:
-        """
-        Given one stub from _mail_list_messages, return:
-            (body_text_or_html, subject, sender_email, received_ts)
-        """
-        access_token = oauth_tokens.get("token", {}).get(
-            "access_token"
-        ) or oauth_tokens.get("access_token")
-        if not access_token:
-            return "", "", "", 0
-        auth = {"Authorization": f"Bearer {access_token}"}
-
-        if provider.endswith("_microsoft"):
-            return (
-                (msg_stub.get("body_preview") or "").strip(),
-                msg_stub.get("subject") or "",
-                (msg_stub.get("from") or "").strip(),
-                msg_stub.get("received_ts") or 0,
-            )
-
-        if provider.endswith("_gmail"):
-            mid = msg_stub.get("id")
-            if not mid:
-                return "", "", "", 0
-            url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{mid}"
-            params = {"format": "full"}
-            async with self._session.get(
-                url, headers=auth, params=params, timeout=ClientTimeout(total=15)
-            ) as resp:
-                data = await resp.json()
-
-            # Subject + sender
-            subject = ""
-            sender = ""
-            for h in (data.get("payload", {}) or {}).get("headers", []):
-                n = (h.get("name") or "").lower()
-                v = h.get("value") or ""
-                if n == "subject":
-                    subject = v
-                elif n == "from":
-                    sender = (
-                        v.split("<")[-1].split(">")[0].strip()
-                        if "<" in v
-                        else v.strip()
-                    )
-
-            # Received timestamp from internalDate (ms since epoch)
-            internal_ms = int(data.get("internalDate") or 0)
-            received_ts = internal_ms // 1000 if internal_ms else 0
-
-            # Snippet first; else walk MIME parts
-            snippet = (data.get("snippet") or "").strip()
-            if snippet:
-                return snippet, subject, sender, received_ts
-
-            payload = data.get("payload") or {}
-            stack = [payload]
-            while stack:
-                p = stack.pop()
-                mime = (p.get("mimeType") or "").lower()
-                body = p.get("body") or {}
-                data_b64 = body.get("data")
-                if data_b64 and ("text/plain" in mime or "text/html" in mime):
-                    decoded = base64.urlsafe_b64decode(data_b64.encode("utf-8")).decode(
-                        "utf-8", errors="ignore"
-                    )
-                    if decoded.strip():
-                        return decoded, subject, sender, received_ts
-                for part in p.get("parts") or []:
-                    stack.append(part)
-            return "", subject, sender, received_ts
-
-        return "", "", "", 0
 
     async def async_get_account_info(self, _tokens: dict) -> dict:
         # TODO: If you have an endpoint that returns a stable account/user id, call it.
@@ -675,29 +507,6 @@ class MConnectClient:
         except Exception as e:
             raise MConnectCommError(f"Command {action} failed: {e}") from e
 
-    # ---------- Mailbox OTP (stub to fill) ----------
-    async def _fetch_latest_otp_email(
-        self, provider: str, oauth_tokens: dict
-    ) -> tuple[str, str, str, int]:
-        """
-        Returns (body, subject, sender, received_ts) of the newest relevant email.
-        """
-        stubs = await self._mail_list_messages(provider, oauth_tokens)
-        if not stubs:
-            return "", "", "", 0
-
-        for stub in stubs:
-            body, subject, sender, received_ts = await self._mail_get_message(
-                provider, oauth_tokens, stub
-            )
-            subj_l = (subject or "").lower()
-            sndr_l = (sender or "").lower()
-            if sndr_l == "noreply@mconnect.pt" and (
-                "verification code" in subj_l or "end all sessions" in subj_l
-            ):
-                return body, subject, sender, received_ts
-
-        return "", "", "", 0
 
     async def async_get_homes(self, access_token: str) -> list[dict]:
         """
@@ -794,17 +603,6 @@ class MConnectClient:
 # --- Helper functions ---
 
 
-def _parse_iso_to_epoch(iso_str: str | None) -> int:
-    if not iso_str:
-        return 0
-    try:
-        return int(
-            datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-            .replace(tzinfo=UTC)
-            .timestamp()
-        )
-    except Exception:
-        return 0
 
 
 def _build_headers(user_agent: str, timezone: str) -> dict[str, str]:
