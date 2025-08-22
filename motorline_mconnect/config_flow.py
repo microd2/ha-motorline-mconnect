@@ -1,77 +1,33 @@
+# UI flow: username/password -> choose provider -> OAuth -> auto-read OTP -> create entry
 from __future__ import annotations
 
-import logging
-from typing import Any
-
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
+from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.helpers import config_entry_oauth2_flow, selector
+from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import (
-    MConnectAuthError,
-    MConnectClient,
-    MConnectCommError,
-    MConnectError,
-)
 from .const import (
-    AUTH_DOMAIN_GMAIL,
-    AUTH_DOMAIN_MSFT,
-    CONF_EMAIL_OAUTH,
-    CONF_EMAIL_PROVIDER,
-    CONF_MCONNECT_TOKENS,
-    DOMAIN,
-    GMAIL_SCOPES,
-    MSFT_SCOPES,
+    DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
+    AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT, GMAIL_SCOPES, MSFT_SCOPES,
+)
+from .api import (
+    MConnectClient, MConnectAuthError, MConnectCommError, MConnectError,
 )
 
-
-class MConnectConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler):
-    """Handle a config flow for Motorline MConnect."""
-
-    DOMAIN = DOMAIN
+class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        super().__init__()
-        self._username: str | None = None
-        self._password: str | None = None
-        self._provider: str | None = None
-        self._oauth_tokens: dict[str, Any] | None = None
-        self._reauth_entry: ConfigEntry | None = None
+        self._username = None
+        self._password = None
+        self._provider = None
+        self._oauth_tokens = None
+        self._reauth_entry = None
 
-    @staticmethod
-    def is_matching(domain: str) -> bool:
-        """Return True if the domain matches."""
-        return domain == DOMAIN
-
-    # --- OAuth2 helper hooks ---
-
-    @property
-    def logger(self):
-        """Return logger."""
-        return logging.getLogger(__name__)
-
-    @property
-    def extra_authorize_data(self) -> dict[str, str] | None:
-        # Provide provider-specific scopes to the helper
-        if self._provider == AUTH_DOMAIN_GMAIL:
-            return {"scope": " ".join(GMAIL_SCOPES)}
-        if self._provider == AUTH_DOMAIN_MSFT:
-            return {"scope": " ".join(MSFT_SCOPES)}
-        return None
-
-    async def async_oauth_create_entry(self, data: dict[str, Any]) -> ConfigFlowResult:
-        # Called by the helper after the OAuth dance
-        self._oauth_tokens = data
-        return await self._finish_login()
-
-    # --- Your steps ---
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         if user_input is not None:
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
@@ -79,71 +35,52 @@ class MConnectConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_USERNAME): selector.TextSelector(
-                        selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
-                    ),
-                    vol.Required(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        )
-                    ),
-                }
-            ),
+            data_schema=vol.Schema({
+                vol.Required(CONF_USERNAME): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)),
+                vol.Required(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
+            }),
         )
 
-    async def async_step_provider(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_provider(self, user_input: dict | None = None) -> FlowResult:
         if user_input is not None:
             choice = user_input["provider"]
-            self._provider = (
-                AUTH_DOMAIN_GMAIL if choice == "gmail" else AUTH_DOMAIN_MSFT
-            )
-            # Hand control to the OAuth2 helper to pick implementation and authorize
-            return await self.async_step_pick_implementation()
+            self._provider = AUTH_DOMAIN_GMAIL if choice == "gmail" else AUTH_DOMAIN_MSFT
+            return await self.async_step_oauth()
 
         return self.async_show_form(
             step_id="provider",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("provider"): vol.In(
-                        {"gmail": "Gmail", "microsoft": "Microsoft 365"}
-                    )
-                }
-            ),
+            data_schema=vol.Schema({
+                vol.Required("provider"): vol.In({"gmail": "Gmail", "microsoft": "Microsoft 365"})
+            }),
         )
 
-    async def async_step_reauth(
-        self, _entry_data: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_oauth(self, user_input: dict | None = None) -> FlowResult:
+        scopes = GMAIL_SCOPES if self._provider == AUTH_DOMAIN_GMAIL else MSFT_SCOPES
+        return await config_entry_oauth2_flow.async_step_auth(self, self._provider, scopes=scopes)
+
+    async def async_oauth_create_entry(self, data: dict) -> FlowResult:
+        self._oauth_tokens = data
+        return await self._finish_login()
+
+    async def async_step_reauth(self, entry_data: dict | None = None) -> FlowResult:
         if "entry_id" in self.context:
-            self._reauth_entry = self.hass.config_entries.async_get_entry(
-                self.context["entry_id"]
-            )
+            self._reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if self._reauth_entry:
             self._username = self._reauth_entry.data.get(CONF_USERNAME)
             self._password = self._reauth_entry.data.get(CONF_PASSWORD)
             self._provider = self._reauth_entry.data.get(CONF_EMAIL_PROVIDER)
+        # Re-run OAuth to refresh mailbox tokens, then finish login
         if self._provider in (AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT):
-            return await self.async_step_pick_implementation()
+            return await self.async_step_oauth()
         return await self.async_step_provider()
 
-    async def _finish_login(self) -> ConfigFlowResult:
-        assert (
-            self._username and self._password and self._provider and self._oauth_tokens
-        )
-
-        # (2) Fix for missing required args in your client constructor (see next section)
-        client = MConnectClient(
-            session=async_get_clientsession(self.hass),
-            user_agent="HomeAssistant",  # string as required by your client
-            timezone=str(self.hass.config.time_zone or "UTC"),
-        )
+    async def _finish_login(self) -> FlowResult:
+        assert self._username and self._password and self._provider and self._oauth_tokens
+        client = MConnectClient(session=async_get_clientsession(self.hass))
 
         try:
-            # (3) Ensure these API methods exist on your client, or rename to the actual ones
             await client.async_begin_login(self._username, self._password)
             tokens = await client.async_complete_login_with_mailbox(
                 provider=self._provider, oauth_tokens=self._oauth_tokens
@@ -162,16 +99,12 @@ class MConnectConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler):
 
         entry_data = {
             CONF_USERNAME: self._username,
-            CONF_PASSWORD: self._password,  # stored for your auto-login use-case
+            CONF_PASSWORD: self._password,          # stored to enable always-on auto-login
             CONF_EMAIL_PROVIDER: self._provider,
             CONF_EMAIL_OAUTH: self._oauth_tokens,
             CONF_MCONNECT_TOKENS: tokens,
         }
 
         if self._reauth_entry:
-            return self.async_update_reload_and_abort(
-                self._reauth_entry, data=entry_data
-            )
-        return self.async_create_entry(
-            title=f"MConnect ({self._username})", data=entry_data
-        )
+            return self.async_update_reload_and_abort(self._reauth_entry, data=entry_data)
+        return self.async_create_entry(title=f"MConnect ({self._username})", data=entry_data)

@@ -1,15 +1,40 @@
 from __future__ import annotations
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+_LOGGER.warning("__init__: Motorline MConnect __init__.py module is being imported")
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
-from .coordinator import MConnectCoordinator
+_LOGGER.warning("__init__: Home Assistant imports completed")
+
+try:
+    from .const import AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT, DOMAIN
+    _LOGGER.warning("__init__: Constants imported successfully")
+except Exception as e:
+    _LOGGER.error("__init__: Error importing constants: %s", e, exc_info=True)
+    raise
+
+try:
+    from .coordinator import MConnectCoordinator
+    _LOGGER.warning("__init__: Coordinator imported successfully")
+except Exception as e:
+    _LOGGER.error("__init__: Error importing coordinator: %s", e, exc_info=True)
+    raise
 
 PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Motorline MConnect integration."""
+    # This function should only run when the integration is actually configured
+    # For now, just return True as we're using config_flow for setup
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

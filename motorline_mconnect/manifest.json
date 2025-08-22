@@ -5,7 +5,7 @@
     "@microd2"
   ],
   "config_flow": true,
-  "dependencies": ["application_credentials", "auth"],
+  "dependencies": ["application_credentials"],
   "documentation": "https://github.com/microd2/motorline_mconnect",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/microd2/motorline_mconnect/issues",

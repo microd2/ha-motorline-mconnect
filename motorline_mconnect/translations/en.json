@@ -16,12 +16,17 @@
           "data": {
             "provider": "Provider"
           }
+        },
+        "pick_implementation": {
+          "title": "OAuth2 Setup",
+          "description": "Choose your OAuth2 application credentials."
         }
       },
       "error": {
-        "auth": "Authentication failed",
-        "connection": "Connection error",
-        "unknown": "Unexpected error"
+        "invalid_auth": "Authentication failed",
+        "cannot_connect": "Connection error", 
+        "unknown": "Unexpected error",
+        "no_implementations": "No OAuth2 implementations available. Using fallback authentication for development."
       }
     }
   }
