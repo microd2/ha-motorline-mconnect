@@ -59,7 +59,7 @@ class MConnectClient:
         self._user_agent = user_agent
         self._timezone = timezone
 
-    def _log_api_call(self, method: str, url: str, payload: dict = None, headers: dict = None, response_status: int = None, response_text: str = None) -> None:
+    def _log_api_call(self, method: str, url: str, payload: dict | None = None, headers: dict | None = None, response_status: int | None = None, response_text: str | None = None) -> None:
         """Log API calls to MConnect endpoints."""
         # Mask sensitive data
         safe_payload = payload.copy() if payload else {}
@@ -143,8 +143,6 @@ class MConnectClient:
           4) Return home tokens { access, refresh, expires_in, expires_at, home_id, user_refresh }
         """
         headers_api = _build_headers(self._user_agent, self._timezone)
-
-        started_at = time.time()  # when this login attempt started
 
         async def _poll_for_code(kind: str) -> str:
             """
@@ -297,7 +295,7 @@ class MConnectClient:
             raise MConnectCommError(f"MFA submit connection error: {e}") from e
 
 
-    async def async_get_account_info(self, _tokens: dict) -> dict:
+    async def async_get_account_info(self, tokens: dict) -> dict:
         # TODO: If you have an endpoint that returns a stable account/user id, call it.
         # If not, you can return {'account_id': username} from config_flow instead.
         return {"account_id": "mconnect-account"}

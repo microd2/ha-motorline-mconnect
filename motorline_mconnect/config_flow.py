@@ -83,26 +83,27 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None and user_input.get("setup_complete"):
             # Check if OAuth2 implementations are available
             try:
-                implementations = await config_entry_oauth2_flow.async_get_implementations(
-                    self.hass, self._provider
-                )
-                if implementations:
-                    # Start the actual OAuth2 flow
-                    return await self.async_step_pick_implementation()
-                else:
-                    # No implementations configured - show error
-                    return self.async_show_form(
-                        step_id="oauth_setup",
-                        errors={"base": "no_implementations"},
-                        data_schema=vol.Schema({
-                            vol.Required("setup_complete", default=False): bool,
-                        }),
-                        description_placeholders={
-                            "provider": "Gmail" if self._provider == AUTH_DOMAIN_GMAIL else "Microsoft 365",
-                            "auth_domain": str(self._provider),
-                            "docs_url": "https://www.home-assistant.io/integrations/application_credentials/"
-                        }
+                if self._provider:
+                    implementations = await config_entry_oauth2_flow.async_get_implementations(
+                        self.hass, self._provider
                     )
+                    if implementations:
+                        # Start the actual OAuth2 flow
+                        return await self.async_step_pick_implementation()
+                    else:
+                        # No implementations configured - show error
+                        return self.async_show_form(
+                            step_id="oauth_setup",
+                            errors={"base": "no_implementations"},
+                            data_schema=vol.Schema({
+                                vol.Required("setup_complete", default=False): bool,
+                            }),
+                            description_placeholders={
+                                "provider": "Gmail" if self._provider == AUTH_DOMAIN_GMAIL else "Microsoft 365",
+                                "auth_domain": str(self._provider),
+                                "docs_url": "https://www.home-assistant.io/integrations/application_credentials/"
+                            }
+                        )
             except Exception:
                 # Fall back to test tokens for development
                 self._oauth_tokens = {
