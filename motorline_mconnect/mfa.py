@@ -52,11 +52,20 @@ class MFAManager:
             TimeoutError: If no valid code found within timeout
             ValueError: If invalid provider or no access token
         """
+        from .const import LOGGER
+        LOGGER.info(f"MFA: Starting wait_for_mfa_code with provider={provider}, timeout={timeout}s")
+        
         if not provider.endswith(("_gmail", "_microsoft")):
+            LOGGER.error(f"MFA: Unsupported provider: {provider}")
             raise ValueError(f"Unsupported provider: {provider}")
             
         access_token = self._extract_access_token(oauth_tokens)
+        LOGGER.info(f"MFA: OAuth tokens structure: {oauth_tokens}")
+        LOGGER.info(f"MFA: Extracted access token: {'✓' if access_token else '✗'}")
+        if access_token:
+            LOGGER.info(f"MFA: Token prefix: {access_token[:20]}...")
         if not access_token:
+            LOGGER.error("MFA: No access token available from OAuth2 flow")
             raise ValueError("No access token available from OAuth2 flow")
             
         self._start_time = time.time()
@@ -65,28 +74,47 @@ class MFAManager:
         
         self._polling = True
         try:
+            LOGGER.info(f"MFA: Starting polling loop, deadline in {timeout}s")
+            poll_count = 0
             while time.monotonic() < deadline and self._polling:
-                messages = await self._list_recent_messages(provider, access_token)
+                poll_count += 1
+                remaining = deadline - time.monotonic()
+                LOGGER.info(f"MFA: Poll #{poll_count}, {remaining:.1f}s remaining")
                 
-                for msg in messages:
+                messages = await self._list_recent_messages(provider, access_token)
+                LOGGER.info(f"MFA: Retrieved {len(messages)} messages from {provider}")
+                
+                for i, msg in enumerate(messages):
+                    LOGGER.debug(f"MFA: Processing message {i+1}/{len(messages)}")
                     body, subject, sender, received_ts = await self._get_message_content(
                         provider, access_token, msg
                     )
+                    LOGGER.info(f"MFA: Message from {sender}, subject: '{subject[:50]}...', received: {received_ts}")
                     
                     # Check if message is from MConnect and recent enough
-                    if (sender.lower() == "noreply@mconnect.pt" and 
-                        received_ts >= min_timestamp and
-                        (time.time() - received_ts) <= 5 * 60):  # Within 5 minutes
-                        
+                    is_mconnect = sender.lower() == "noreply@mconnect.pt"
+                    is_recent_enough = received_ts >= min_timestamp
+                    is_within_window = (time.time() - received_ts) <= 5 * 60
+                    LOGGER.info(f"MFA: Checks - MConnect:{is_mconnect}, Recent:{is_recent_enough}, Window:{is_within_window}")
+                    
+                    if is_mconnect and is_recent_enough and is_within_window:
+                        LOGGER.info(f"MFA: Processing MConnect email for {code_type} code")
                         code = self._extract_code_from_email(body, subject, code_type)
+                        LOGGER.info(f"MFA: Extracted code: {'✓' if code else '✗'}")
                         if code:
+                            LOGGER.info(f"MFA: SUCCESS! Found {code_type} code: {code}")
                             return code
+                    else:
+                        LOGGER.debug(f"MFA: Skipping message from {sender} (not MConnect or not recent enough)")
                             
+                LOGGER.debug(f"MFA: Sleeping for {poll_interval}s before next poll")
                 await asyncio.sleep(poll_interval)
                 
         finally:
             self._polling = False
+            LOGGER.info(f"MFA: Polling completed after {poll_count if 'poll_count' in locals() else 0} attempts")
             
+        LOGGER.warning(f"MFA: TIMEOUT - No {code_type} code found within {timeout} seconds")
         raise TimeoutError(
             f"Timed out waiting for {code_type.replace('_', ' ')} email ({timeout} seconds)"
         )
@@ -142,17 +170,24 @@ class MFAManager:
         """List recent messages from MConnect."""
         auth_header = {"Authorization": f"Bearer {access_token}"}
         
+        from .const import LOGGER
+        LOGGER.debug(f"MFA: Listing messages for provider {provider}")
         match provider:
             case p if p.endswith("_gmail"):
+                LOGGER.debug("MFA: Using Gmail API")
                 return await self._list_gmail_messages(auth_header)
             case p if p.endswith("_microsoft"):
+                LOGGER.debug("MFA: Using Microsoft Graph API")
                 return await self._list_microsoft_messages(auth_header)
             case _:
+                LOGGER.warning(f"MFA: Unknown provider format: {provider}")
                 return []
     
     async def _list_gmail_messages(self, auth_header: dict) -> list[dict]:
         """List recent Gmail messages from noreply@mconnect.pt."""
+        from .const import LOGGER
         query = 'from:noreply@mconnect.pt subject:(verification OR "end all sessions") newer_than:2d'
+        LOGGER.info(f"MFA: Gmail query: {query}")
         url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
         params = {"q": query, "maxResults": 10}
         
@@ -160,9 +195,14 @@ class MFAManager:
             async with self._session.get(
                 url, headers=auth_header, params=params, timeout=ClientTimeout(total=15)
             ) as resp:
+                LOGGER.info(f"MFA: Gmail API response status: {resp.status}")
                 if resp.status != 200:
+                    error_text = await resp.text()
+                    LOGGER.error(f"MFA: Gmail API error {resp.status}: {error_text}")
                     return []
                 data = await resp.json()
+                LOGGER.info(f"MFA: Gmail API returned: {data}")
+                LOGGER.info(f"MFA: Found {len(data.get('messages', []))} raw messages")
                 
             messages = []
             for msg in data.get("messages", []):

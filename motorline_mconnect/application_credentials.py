@@ -1,4 +1,4 @@
-# Fixed OAuth endpoints for Gmail and Microsoft Graph
+# Gmail OAuth2 implementation for MConnect integration
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ from homeassistant.helpers.config_entry_oauth2_flow import (
     LocalOAuth2ImplementationWithPkce,
 )
 
-# Use single OAuth domain
+# Use main domain for OAuth
 AUTH_DOMAIN = DOMAIN
 
 
 async def async_get_authorization_server(hass: HomeAssistant) -> AuthorizationServer:
-    # Required by HA; not used when we return custom implementations
+    """Return Gmail OAuth2 authorization server."""
     return AuthorizationServer(
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",
@@ -25,19 +25,17 @@ async def async_get_authorization_server(hass: HomeAssistant) -> AuthorizationSe
 
 
 class _GmailImpl(LocalOAuth2ImplementationWithPkce):
-    pass
-
-
-class _MsftImpl(LocalOAuth2ImplementationWithPkce):
+    """Gmail OAuth2 implementation."""
     pass
 
 
 async def async_get_auth_implementation(
     hass: HomeAssistant, auth_domain: str, cred: ClientCredential
 ):
+    """Return Gmail OAuth2 implementation."""
     from .const import LOGGER
-    LOGGER.info(f"async_get_auth_implementation called with domain: {auth_domain}")
-    # For now, default to Gmail OAuth (we'll handle provider selection in config flow)
+    LOGGER.info(f"async_get_auth_implementation called for Gmail OAuth with domain: {auth_domain}")
+    
     return _GmailImpl(
         hass,
         AUTH_DOMAIN,

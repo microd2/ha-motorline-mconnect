@@ -1,4 +1,4 @@
-# UI flow: username/password -> choose provider -> OAuth -> auto-read OTP -> create entry
+# UI flow: username/password -> OAuth (Gmail) -> auto-read OTP -> create entry
 from __future__ import annotations
 
 import voluptuous as vol
@@ -11,7 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
-    AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT, GMAIL_SCOPES, MSFT_SCOPES,
+    AUTH_DOMAIN_GMAIL, GMAIL_SCOPES,
 )
 from .api import (
     MConnectClient, MConnectAuthError, MConnectCommError,
@@ -23,7 +23,6 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._username = None
         self._password = None
-        self._provider = None
         self._oauth_tokens = None
         self._reauth_entry = None
 
@@ -31,7 +30,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
-            return await self.async_step_provider()
+            return await self.async_step_oauth()
 
         return self.async_show_form(
             step_id="user",
@@ -43,37 +42,17 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }),
         )
 
-    async def async_step_provider(self, user_input: dict | None = None) -> ConfigFlowResult:
-        if user_input is not None:
-            choice = user_input["provider"]
-            match choice:
-                case "gmail":
-                    self._provider = AUTH_DOMAIN_GMAIL
-                case "microsoft":
-                    self._provider = AUTH_DOMAIN_MSFT
-                case _:
-                    raise ValueError(f"Unsupported choice: {choice}")
-            return await self.async_step_oauth()
-
-        return self.async_show_form(
-            step_id="provider",
-            data_schema=vol.Schema({
-                vol.Required("provider"): vol.In({"gmail": "Gmail", "microsoft": "Outlook"})
-            }),
-        )
 
     async def async_step_oauth(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Show instructions for OAuth2 setup."""
-        provider_name = "Gmail" if self._provider == AUTH_DOMAIN_GMAIL else "Microsoft 365"
-        
         return self.async_show_form(
             step_id="oauth_setup", 
             data_schema=vol.Schema({
                 vol.Required("setup_complete", default=False): bool,
             }),
             description_placeholders={
-                "provider": provider_name,
-                "auth_domain": str(self._provider),
+                "provider": "Gmail",
+                "auth_domain": str(DOMAIN),
                 "docs_url": "https://www.home-assistant.io/integrations/application_credentials/"
             }
         )
@@ -104,7 +83,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             vol.Required("setup_complete", default=False): bool,
                         }),
                         description_placeholders={
-                            "provider": "Gmail" if self._provider == AUTH_DOMAIN_GMAIL else "Microsoft 365",
+                            "provider": "Gmail",
                             "auth_domain": str(DOMAIN),
                             "docs_url": "https://www.home-assistant.io/integrations/application_credentials/"
                         }
@@ -115,7 +94,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 LOGGER.error(f"Exception checking OAuth2 implementations: {e}")
                 # Fall back to test tokens for development
                 self._oauth_tokens = {
-                    "access_token": f"test_token_{self._provider}",
+                    "access_token": "test_token_gmail",
                     "token_type": "Bearer", 
                     "expires_in": 3600,
                 }
@@ -124,40 +103,31 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_abort(reason="oauth_setup_incomplete")
 
     async def async_step_pick_implementation(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Pick OAuth2 implementation to use."""
-        if user_input is not None:
-            implementation = user_input["implementation"] 
-            # Start proper OAuth2 flow
-            flow_handler = config_entry_oauth2_flow.OAuth2FlowHandler()
-            flow_handler.async_set_unique_id(f"{DOMAIN}_oauth")
-            return await flow_handler.async_step_pick_implementation(user_input)
-        
+        """Pick OAuth2 implementation to use and start OAuth flow."""
         # Get available implementations for the main domain
         implementations = await config_entry_oauth2_flow.async_get_implementations(
             self.hass, DOMAIN
         )
         
         if not implementations:
-            # This shouldn't happen since we checked before, but fallback
-            self._oauth_tokens = {
-                "access_token": f"test_token_{self._provider}",
-                "token_type": "Bearer", 
-                "expires_in": 3600,
-            }
-            return await self._finish_login()
+            # No OAuth implementations configured - show error
+            from .const import LOGGER
+            LOGGER.error("No OAuth2 implementations found - user needs to configure Application Credentials")
+            return self.async_abort(reason="no_oauth_config")
         
         # If only one implementation, use it directly
         if len(implementations) == 1:
             implementation_key = list(implementations.keys())[0]
-            # For now, still use test tokens until we get OAuth2 flow working
-            self._oauth_tokens = {
-                "access_token": f"real_token_{implementation_key}",
-                "token_type": "Bearer", 
-                "expires_in": 3600,
-            }
-            return await self._finish_login()
+            implementation = implementations[implementation_key]
+            # Start OAuth2 flow with the implementation
+            return await self.async_step_auth(implementation=implementation)
         
-        # Multiple implementations - show selection
+        # Multiple implementations - show selection (shouldn't happen with Gmail-only)
+        if user_input is not None:
+            implementation_key = user_input["implementation"]
+            implementation = implementations[implementation_key]
+            return await self.async_step_auth(implementation=implementation)
+        
         implementation_options = {
             key: impl.name for key, impl in implementations.items()
         }
@@ -168,6 +138,42 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required("implementation"): vol.In(implementation_options)
             }),
         )
+        
+    async def async_step_auth(self, user_input: dict | None = None, implementation=None) -> ConfigFlowResult:
+        """Handle OAuth2 authentication."""
+        if implementation is None:
+            return self.async_abort(reason="missing_implementation")
+            
+        from .const import LOGGER
+        LOGGER.info(f"Starting OAuth2 flow with implementation: {implementation}")
+        
+        # Start the OAuth2 authorization flow
+        return await self.async_step_external_auth(
+            {"implementation": implementation}
+        )
+        
+    async def async_step_external_auth(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Handle external OAuth2 authentication."""
+        implementation = user_input["implementation"]
+        
+        # Generate OAuth2 authorization URL
+        flow_impl = config_entry_oauth2_flow.OAuth2FlowImplementation(
+            self.hass, 
+            DOMAIN,
+            implementation
+        )
+        
+        return await flow_impl.async_step_authorize()
+        
+    async def async_step_external_auth_callback(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Handle OAuth2 callback with authorization code."""
+        # This will be called by HA's OAuth2 system with the tokens
+        # The tokens should be in user_input["token"]
+        if "token" in user_input:
+            self._oauth_tokens = user_input["token"]
+            return await self._finish_login()
+        
+        return self.async_abort(reason="oauth_failed")
                 
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
         """Create entry from OAuth2 flow completion."""
@@ -183,7 +189,6 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if self._reauth_entry:
             self._username = self._reauth_entry.data.get(CONF_USERNAME)
             self._password = self._reauth_entry.data.get(CONF_PASSWORD)
-            self._provider = self._reauth_entry.data.get(CONF_EMAIL_PROVIDER)
             stored_oauth = self._reauth_entry.data.get(CONF_EMAIL_OAUTH)
             stored_mconnect = self._reauth_entry.data.get(CONF_MCONNECT_TOKENS)
 
@@ -224,14 +229,10 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._finish_login()
 
         # Re-run OAuth to refresh mailbox tokens, then finish login
-        match self._provider:
-            case p if p in (AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT):
-                return await self.async_step_oauth()
-            case _:
-                return await self.async_step_provider()
+        return await self.async_step_oauth()
 
     async def _finish_login(self) -> ConfigFlowResult:
-        assert self._username and self._password and self._provider and self._oauth_tokens
+        assert self._username and self._password and self._oauth_tokens
 
         session = async_get_clientsession(self.hass)
         timezone = str(self.hass.config.time_zone)
@@ -243,7 +244,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Step 2: Complete login with mailbox MFA + get home tokens
             tokens = await client.async_complete_login_with_mailbox(
-                provider=self._provider,
+                provider="motorline_mconnect_gmail",
                 oauth_tokens=self._oauth_tokens
             )
 
@@ -263,6 +264,8 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 description_placeholders={"error": str(e)}
             )
         except Exception as e:
+            from .const import LOGGER
+            LOGGER.error(f"Unexpected error in _finish_login: {e}", exc_info=True)
             return self.async_show_form(
                 step_id="user",
                 errors={"base": "unknown"},
@@ -276,7 +279,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry_data = {
             CONF_USERNAME: self._username,
             CONF_PASSWORD: self._password,          # stored to enable always-on auto-login
-            CONF_EMAIL_PROVIDER: self._provider,
+            CONF_EMAIL_PROVIDER: "motorline_mconnect_gmail",
             CONF_EMAIL_OAUTH: self._oauth_tokens,
             CONF_MCONNECT_TOKENS: tokens,
         }
@@ -289,66 +292,3 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             title=f"MConnect ({self._username})", data=entry_data
         )
 
-
-class GmailOAuth2FlowHandler(
-    config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=AUTH_DOMAIN_GMAIL
-):
-    """Handle Gmail OAuth2 authentication."""
-
-    DOMAIN = AUTH_DOMAIN_GMAIL
-    VERSION = 1
-
-    @property
-    def logger(self):
-        """Return logger."""
-        from .const import LOGGER
-        return LOGGER
-
-    @property
-    def name(self) -> str:
-        """Name of the integration."""
-        return "Gmail (for MConnect)"
-
-    @property
-    def config_flow(self):
-        """Return config flow."""
-        return MConnectConfigFlow
-
-    async def async_step_creation(self, user_input=None):
-        """Handle creation."""
-        await self.async_set_unique_id(f"{DOMAIN}_gmail")
-        self._abort_if_unique_id_configured()
-        
-        return await self.async_oauth_create_entry(self.external_data)
-
-
-class MicrosoftOAuth2FlowHandler(
-    config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=AUTH_DOMAIN_MSFT
-):
-    """Handle Microsoft OAuth2 authentication."""
-
-    DOMAIN = AUTH_DOMAIN_MSFT
-    VERSION = 1
-
-    @property
-    def logger(self):
-        """Return logger."""
-        from .const import LOGGER
-        return LOGGER
-
-    @property
-    def name(self) -> str:
-        """Name of the integration."""
-        return "Microsoft 365 (for MConnect)"
-
-    @property
-    def config_flow(self):
-        """Return config flow."""
-        return MConnectConfigFlow
-
-    async def async_step_creation(self, user_input=None):
-        """Handle creation."""
-        await self.async_set_unique_id(f"{DOMAIN}_microsoft")
-        self._abort_if_unique_id_configured()
-        
-        return await self.async_oauth_create_entry(self.external_data)

@@ -14,7 +14,7 @@ from homeassistant.util import dt as dt_util
 _LOGGER.warning("__init__: Home Assistant imports completed")
 
 try:
-    from .const import AUTH_DOMAIN_GMAIL, AUTH_DOMAIN_MSFT, DOMAIN
+    from .const import AUTH_DOMAIN_GMAIL, DOMAIN
     _LOGGER.warning("__init__: Constants imported successfully")
 except Exception as e:
     _LOGGER.error("__init__: Error importing constants: %s", e, exc_info=True)
