@@ -12,8 +12,9 @@ CONF_EMAIL_OAUTH = "email_oauth"
 CONF_MCONNECT_TOKENS = "mconnect_tokens"  # <-- required by config_flow/coordinator
 
 # OAuth provider ids (used by application_credentials + config_flow)
-AUTH_DOMAIN_GMAIL = f"{DOMAIN}_gmail"
-AUTH_DOMAIN_MSFT = f"{DOMAIN}_microsoft"
+# Simplified: use single OAuth domain and handle provider selection in flow
+AUTH_DOMAIN_GMAIL = DOMAIN  # Use main domain for OAuth2
+AUTH_DOMAIN_MSFT = DOMAIN   # Use main domain for OAuth2
 
 # Scopes for inbox polling
 GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]

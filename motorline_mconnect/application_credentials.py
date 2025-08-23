@@ -12,8 +12,8 @@ from homeassistant.helpers.config_entry_oauth2_flow import (
     LocalOAuth2ImplementationWithPkce,
 )
 
-AUTH_DOMAIN_GMAIL = f"{DOMAIN}_gmail"
-AUTH_DOMAIN_MSFT = f"{DOMAIN}_microsoft"
+# Use single OAuth domain
+AUTH_DOMAIN = DOMAIN
 
 
 async def async_get_authorization_server(hass: HomeAssistant) -> AuthorizationServer:
@@ -35,28 +35,12 @@ class _MsftImpl(LocalOAuth2ImplementationWithPkce):
 async def async_get_auth_implementation(
     hass: HomeAssistant, auth_domain: str, cred: ClientCredential
 ):
-    if auth_domain == AUTH_DOMAIN_GMAIL:
-        return _GmailImpl(
-            hass,
-            AUTH_DOMAIN_GMAIL,
-            cred.client_id,
-            authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
-            token_url="https://oauth2.googleapis.com/token",
-            client_secret=cred.client_secret or "",
-        )
-    if auth_domain == AUTH_DOMAIN_MSFT:
-        return _MsftImpl(
-            hass,
-            AUTH_DOMAIN_MSFT,
-            cred.client_id,
-            authorize_url="https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-            token_url="https://login.microsoftonline.com/common/oauth2/v2.0/token",
-            client_secret=cred.client_secret or "",
-        )
-    # Fallback to Gmail
+    from .const import LOGGER
+    LOGGER.info(f"async_get_auth_implementation called with domain: {auth_domain}")
+    # For now, default to Gmail OAuth (we'll handle provider selection in config flow)
     return _GmailImpl(
         hass,
-        AUTH_DOMAIN_GMAIL,
+        AUTH_DOMAIN,
         cred.client_id,
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",
