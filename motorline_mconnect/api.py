@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from typing import Literal
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
+
+from .const import LOGGER
 
 from .models import CoverDevice, DeviceMeta, LightDevice, SwitchDevice
 from .mfa import wait_for_mfa_code
@@ -56,6 +59,30 @@ class MConnectClient:
         self._user_agent = user_agent
         self._timezone = timezone
 
+    def _log_api_call(self, method: str, url: str, payload: dict = None, headers: dict = None, response_status: int = None, response_text: str = None) -> None:
+        """Log API calls to MConnect endpoints."""
+        # Mask sensitive data
+        safe_payload = payload.copy() if payload else {}
+        if "password" in safe_payload:
+            safe_payload["password"] = "***MASKED***"
+        if "client_secret" in safe_payload:
+            safe_payload["client_secret"] = "***MASKED***"
+            
+        safe_headers = headers.copy() if headers else {}
+        if "Authorization" in safe_headers:
+            safe_headers["Authorization"] = f"Bearer ***MASKED***"
+            
+        LOGGER.info(f"MConnect API Call: {method} {url}")
+        LOGGER.info(f"  Request Headers: {json.dumps(safe_headers, indent=2)}")
+        LOGGER.info(f"  Request Payload: {json.dumps(safe_payload, indent=2)}")
+        
+        if response_status is not None:
+            LOGGER.info(f"  Response Status: {response_status}")
+        if response_text is not None:
+            # Truncate very long responses
+            truncated_response = response_text[:1000] + "..." if len(response_text) > 1000 else response_text
+            LOGGER.info(f"  Response Body: {truncated_response}")
+
     async def async_begin_login(self, username: str, password: str) -> None:
         # ---------- Login / MFA ----------
         """
@@ -73,11 +100,19 @@ class MConnectClient:
             "mfa": True,
         }
         headers = _build_headers(self._user_agent, self._timezone)
+        
+        # Log the request
+        self._log_api_call("POST", url, payload, headers)
+        
         try:
             async with self._session.post(
                 url, json=payload, headers=headers, timeout=ClientTimeout(total=15)
             ) as resp:
                 text = await resp.text()
+                
+                # Log the response
+                self._log_api_call("POST", url, response_status=resp.status, response_text=text)
+                
                 if resp.status == 401:
                     raise MConnectAuthError("Invalid credentials")
                 if resp.status == 429:
@@ -131,6 +166,9 @@ class MConnectClient:
         verif_code = await _poll_for_code("verification")
         payload = {"code": verif_code, "platform": "Win32", "model": "edge"}
 
+        # Log the MFA verification request
+        self._log_api_call("POST", VERIFY_URL, payload, headers_api)
+
         try:
             async with self._session.post(
                 VERIFY_URL,
@@ -139,6 +177,9 @@ class MConnectClient:
                 timeout=ClientTimeout(total=15),
             ) as resp:
                 text = await resp.text()
+                
+                # Log the MFA verification response
+                self._log_api_call("POST", VERIFY_URL, response_status=resp.status, response_text=text)
 
                 if resp.status == 200:
                     data = await resp.json()
@@ -162,12 +203,20 @@ class MConnectClient:
 
                 # ---- 2) Kickoff-all-sessions flow ----
                 if resp.status == 403 and "MaxTrustedDevicesError" in (text or ""):
+                    # Log reset trigger request
+                    self._log_api_call("GET", RESET_URL, headers=headers_api)
+                    
                     async with self._session.get(
                         RESET_URL, headers=headers_api, timeout=ClientTimeout(total=15)
                     ) as r2:
+                        r2_text = await r2.text()
+                        
+                        # Log reset trigger response
+                        self._log_api_call("GET", RESET_URL, response_status=r2.status, response_text=r2_text)
+                        
                         if r2.status != 200:
                             raise MConnectAuthError(
-                                f"Reset trigger failed: {r2.status} {await r2.text()}"
+                                f"Reset trigger failed: {r2.status} {r2_text}"
                             )
 
                     reset_code = await _poll_for_code("end_all")
@@ -301,10 +350,18 @@ class MConnectClient:
         headers["Authorization"] = f"Bearer {access}"
         headers["Accept"] = "application/json"
 
+        # Log devices fetch request
+        self._log_api_call("GET", ALL_DEVICES_URL, headers=headers)
+
         try:
             async with self._session.get(
                 ALL_DEVICES_URL, headers=headers, timeout=ClientTimeout(total=20)
             ) as resp:
+                response_text = await resp.text()
+                
+                # Log devices fetch response
+                self._log_api_call("GET", ALL_DEVICES_URL, response_status=resp.status, response_text=response_text)
+                
                 if resp.status == 401:
                     raise MConnectAuthError("Access token expired/invalid")
                 if resp.status == 429:
@@ -313,16 +370,15 @@ class MConnectClient:
                     raise MConnectServerError("Server error during fetch")
                 if resp.status != 200:
                     raise MConnectCommError(
-                        f"Unexpected fetch status {resp.status}: {await resp.text()}"
+                        f"Unexpected fetch status {resp.status}: {response_text}"
                     )
 
                 try:
                     data = await resp.json()
                 except Exception as e:
                     # Server said 200 but body isn't JSON
-                    text = await resp.text()
                     raise MConnectCommError(
-                        f"Invalid JSON from fetch: {text[:200]}"
+                        f"Invalid JSON from fetch: {response_text[:200]}"
                     ) from e
 
         except TimeoutError as e:
@@ -514,12 +570,21 @@ class MConnectClient:
         """
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
+        
+        # Log homes request
+        self._log_api_call("GET", HOMES_URL, headers=headers)
+        
         async with self._session.get(
             HOMES_URL, headers=headers, timeout=ClientTimeout(total=15)
         ) as resp:
+            response_text = await resp.text()
+            
+            # Log homes response
+            self._log_api_call("GET", HOMES_URL, response_status=resp.status, response_text=response_text)
+            
             if resp.status != 200:
                 raise MConnectCommError(
-                    f"Failed to fetch homes: {resp.status} {await resp.text()}"
+                    f"Failed to fetch homes: {resp.status} {response_text}"
                 )
             return await resp.json()
 
@@ -530,15 +595,24 @@ class MConnectClient:
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
         payload = {"home_id": home_id}
+        
+        # Log home token exchange request
+        self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)
+        
         async with self._session.post(
             HOMES_TOKEN_URL,
             json=payload,
             headers=headers,
             timeout=ClientTimeout(total=15),
         ) as resp:
+            response_text = await resp.text()
+            
+            # Log home token exchange response
+            self._log_api_call("POST", HOMES_TOKEN_URL, response_status=resp.status, response_text=response_text)
+            
             if resp.status != 200:
                 raise MConnectCommError(
-                    f"Failed to exchange home token: {resp.status} {await resp.text()}"
+                    f"Failed to exchange home token: {resp.status} {response_text}"
                 )
             data = await resp.json()
             return {
