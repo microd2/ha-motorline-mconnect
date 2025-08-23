@@ -57,7 +57,7 @@ class MFAManager:
             
         access_token = self._extract_access_token(oauth_tokens)
         if not access_token:
-            raise ValueError("No access token available")
+            raise ValueError("No access token available from OAuth2 flow")
             
         self._start_time = time.time()
         deadline = time.monotonic() + timeout
@@ -94,13 +94,20 @@ class MFAManager:
     def stop_polling(self) -> None:
         """Stop the current MFA polling operation."""
         self._polling = False
-        
+    
     def _extract_access_token(self, oauth_tokens: dict) -> str | None:
-        """Extract access token from various OAuth token formats."""
-        return (
-            oauth_tokens.get("token", {}).get("access_token") or
-            oauth_tokens.get("access_token")
-        )
+        """Extract access token from OAuth2 token formats."""
+        # OAuth2 flow format: access token directly available
+        access_token = oauth_tokens.get("access_token")
+        if access_token:
+            return access_token
+            
+        # Check if token is nested in 'token' key (some OAuth implementations)
+        token_data = oauth_tokens.get("token", {})
+        if isinstance(token_data, dict):
+            return token_data.get("access_token")
+        
+        return None
     
     def _extract_code_from_email(self, body: str, subject: str, code_type: str) -> str | None:
         """
@@ -135,12 +142,13 @@ class MFAManager:
         """List recent messages from MConnect."""
         auth_header = {"Authorization": f"Bearer {access_token}"}
         
-        if provider.endswith("_gmail"):
-            return await self._list_gmail_messages(auth_header)
-        elif provider.endswith("_microsoft"):
-            return await self._list_microsoft_messages(auth_header)
-        
-        return []
+        match provider:
+            case p if p.endswith("_gmail"):
+                return await self._list_gmail_messages(auth_header)
+            case p if p.endswith("_microsoft"):
+                return await self._list_microsoft_messages(auth_header)
+            case _:
+                return []
     
     async def _list_gmail_messages(self, auth_header: dict) -> list[dict]:
         """List recent Gmail messages from noreply@mconnect.pt."""
@@ -223,19 +231,19 @@ class MFAManager:
         self, provider: str, access_token: str, msg: dict
     ) -> tuple[str, str, str, int]:
         """Get full message content."""
-        if provider.endswith("_microsoft"):
-            # Microsoft Graph already provides content in the list
-            return (
-                msg.get("body_preview", ""),
-                msg.get("subject", ""),
-                msg.get("from", ""),
-                msg.get("received_ts", 0)
-            )
-        
-        if provider.endswith("_gmail"):
-            return await self._get_gmail_message_content(access_token, msg)
-            
-        return "", "", "", 0
+        match provider:
+            case p if p.endswith("_microsoft"):
+                # Microsoft Graph already provides content in the list
+                return (
+                    msg.get("body_preview", ""),
+                    msg.get("subject", ""),
+                    msg.get("from", ""),
+                    msg.get("received_ts", 0)
+                )
+            case p if p.endswith("_gmail"):
+                return await self._get_gmail_message_content(access_token, msg)
+            case _:
+                return "", "", "", 0
     
     async def _get_gmail_message_content(
         self, access_token: str, msg: dict
