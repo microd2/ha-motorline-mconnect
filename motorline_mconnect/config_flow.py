@@ -20,6 +20,7 @@ from .api import (
 class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+
     def __init__(self) -> None:
         self._username = None
         self._password = None
@@ -92,13 +93,7 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Log the exception for debugging
                 from .const import LOGGER
                 LOGGER.error(f"Exception checking OAuth2 implementations: {e}")
-                # Fall back to test tokens for development
-                self._oauth_tokens = {
-                    "access_token": "test_token_gmail",
-                    "token_type": "Bearer", 
-                    "expires_in": 3600,
-                }
-                return await self._finish_login()
+                return self.async_abort(reason="oauth_error")
         
         return self.async_abort(reason="oauth_setup_incomplete")
 
@@ -140,45 +135,97 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         
     async def async_step_auth(self, user_input: dict | None = None, implementation=None) -> ConfigFlowResult:
-        """Handle OAuth2 authentication."""
+        """Initiate OAuth2 flow to get Gmail access tokens before MConnect login.""" 
         if implementation is None:
             return self.async_abort(reason="missing_implementation")
             
         from .const import LOGGER
-        LOGGER.info(f"Starting OAuth2 flow with implementation: {implementation}")
+        LOGGER.info(f"Need to get Gmail OAuth2 tokens before MConnect login: {implementation}")
         
-        # Start the OAuth2 authorization flow
-        return await self.async_step_external_auth(
-            {"implementation": implementation}
+        # Store implementation for later use
+        self._implementation = implementation
+        
+        # Create a manual OAuth2 session to get access tokens
+        import secrets
+        from urllib.parse import urlencode
+        
+        # Generate state for OAuth2 security
+        state = secrets.token_urlsafe(32)
+        self._oauth_state = state
+        
+        # Build authorization URL
+        params = {
+            "response_type": "code",
+            "client_id": implementation.client_id,
+            "redirect_uri": implementation.redirect_uri,
+            "scope": " ".join(GMAIL_SCOPES),
+            "state": state,
+            "access_type": "offline",
+            "prompt": "consent"
+        }
+        
+        auth_url = f"{implementation.authorize_url}?{urlencode(params)}"
+        LOGGER.info(f"Redirecting user to Gmail OAuth2 authorization: {auth_url[:100]}...")
+        
+        # Redirect user to Gmail OAuth2 authorization
+        return self.async_external_step(
+            step_id="gmail_oauth", 
+            url=auth_url
         )
+    
+    async def async_step_gmail_oauth(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Handle OAuth2 callback from Gmail authorization."""
+        from .const import LOGGER
+        LOGGER.info(f"Gmail OAuth2 callback: {user_input}")
         
-    async def async_step_external_auth(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Handle external OAuth2 authentication."""
-        implementation = user_input["implementation"]
-        
-        # Generate OAuth2 authorization URL
-        flow_impl = config_entry_oauth2_flow.OAuth2FlowImplementation(
-            self.hass, 
-            DOMAIN,
-            implementation
-        )
-        
-        return await flow_impl.async_step_authorize()
-        
-    async def async_step_external_auth_callback(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Handle OAuth2 callback with authorization code."""
-        # This will be called by HA's OAuth2 system with the tokens
-        # The tokens should be in user_input["token"]
-        if "token" in user_input:
-            self._oauth_tokens = user_input["token"]
-            return await self._finish_login()
-        
-        return self.async_abort(reason="oauth_failed")
+        if not user_input or "code" not in user_input:
+            return self.async_abort(reason="oauth_failed")
+            
+        # Exchange authorization code for access tokens
+        try:
+            import aiohttp
+            from urllib.parse import urlencode
+            
+            token_data = {
+                "grant_type": "authorization_code",
+                "code": user_input["code"],
+                "client_id": self._implementation.client_id,
+                "client_secret": self._implementation.client_secret,
+                "redirect_uri": self._implementation.redirect_uri,
+            }
+            
+            session = async_get_clientsession(self.hass)
+            async with session.post(
+                self._implementation.token_url,
+                data=token_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            ) as resp:
+                if resp.status != 200:
+                    error_text = await resp.text()
+                    LOGGER.error(f"OAuth2 token exchange failed: {error_text}")
+                    return self.async_abort(reason="oauth_token_failed")
+                    
+                token_response = await resp.json()
+                LOGGER.info("Gmail OAuth2 tokens obtained successfully")
                 
+            # Store tokens and proceed with MConnect login
+            self._oauth_tokens = token_response
+            return await self._finish_login()
+            
+        except Exception as e:
+            LOGGER.error(f"OAuth2 token exchange error: {e}")
+            return self.async_abort(reason="oauth_error")
+        
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
-        """Create entry from OAuth2 flow completion."""
-        # OAuth2 flow completed successfully, store tokens
+        """Handle OAuth2 callback from Gmail authorization."""
+        from .const import LOGGER
+        LOGGER.info(f"Gmail OAuth2 callback received: {list(data.keys())}")
+        
+        # Store the OAuth2 tokens for Gmail access
         self._oauth_tokens = data
+        LOGGER.info("Gmail OAuth2 tokens stored, proceeding with MConnect login")
+        
+        # Now we have Gmail access - proceed with MConnect login
         return await self._finish_login()
     
 
@@ -233,6 +280,9 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _finish_login(self) -> ConfigFlowResult:
         assert self._username and self._password and self._oauth_tokens
+        
+        from .const import LOGGER
+        LOGGER.info("Starting MConnect login with Gmail OAuth2 tokens available")
 
         session = async_get_clientsession(self.hass)
         timezone = str(self.hass.config.time_zone)

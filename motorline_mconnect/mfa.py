@@ -135,6 +135,14 @@ class MFAManager:
         if isinstance(token_data, dict):
             return token_data.get("access_token")
         
+        # Check if we only have implementation and need to do OAuth2 flow
+        implementation = oauth_tokens.get("implementation")
+        if implementation:
+            from .const import LOGGER
+            LOGGER.error("MFA: Need to perform OAuth2 flow to get Gmail access tokens")
+            # The proper solution is to integrate with HA's OAuth2 flow here
+            # For now, this explains why it's failing
+            
         return None
     
     def _extract_code_from_email(self, body: str, subject: str, code_type: str) -> str | None:
