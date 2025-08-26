@@ -153,11 +153,11 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         state = secrets.token_urlsafe(32)
         self._oauth_state = state
         
-        # Build authorization URL
+        # Build authorization URL with My Home Assistant redirect URI
         params = {
             "response_type": "code",
             "client_id": implementation.client_id,
-            "redirect_uri": implementation.redirect_uri,
+            "redirect_uri": "https://my.home-assistant.io/redirect/oauth",
             "scope": " ".join(GMAIL_SCOPES),
             "state": state,
             "access_type": "offline",
@@ -165,33 +165,50 @@ class MConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
         
         auth_url = f"{implementation.authorize_url}?{urlencode(params)}"
-        LOGGER.info(f"Redirecting user to Gmail OAuth2 authorization: {auth_url[:100]}...")
+        LOGGER.info(f"OAuth2 redirect_uri: https://my.home-assistant.io/redirect/oauth")
+        LOGGER.info(f"Generated Gmail OAuth2 authorization URL: {auth_url[:100]}...")
         
-        # Redirect user to Gmail OAuth2 authorization
+        # Open browser to authorization URL, then show form for manual code entry
+        self._auth_url = auth_url  # Store for later reference
         return self.async_external_step(
-            step_id="gmail_oauth", 
+            step_id="gmail_auth_browser",
             url=auth_url
         )
     
-    async def async_step_gmail_oauth(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Handle OAuth2 callback from Gmail authorization."""
+    async def async_step_gmail_auth_browser(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Handle return from external browser step - show form for manual code entry."""
+        # After user clicks through external authorization, show form for code entry
+        import voluptuous as vol
+        return self.async_show_form(
+            step_id="gmail_code_entry",
+            data_schema=vol.Schema({
+                vol.Required("authorization_code"): str
+            }),
+            description_placeholders={}
+        )
+    
+    async def async_step_gmail_code_entry(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Handle manual entry of OAuth2 authorization code."""
         from .const import LOGGER
-        LOGGER.info(f"Gmail OAuth2 callback: {user_input}")
         
-        if not user_input or "code" not in user_input:
+        if user_input is None:
+            return self.async_abort(reason="no_user_input")
+            
+        authorization_code = user_input.get("authorization_code")
+        if not authorization_code:
             return self.async_abort(reason="oauth_failed")
             
+        LOGGER.info(f"Received Gmail OAuth2 authorization code: {authorization_code[:10]}...")
+        
         # Exchange authorization code for access tokens
         try:
-            import aiohttp
-            from urllib.parse import urlencode
             
             token_data = {
                 "grant_type": "authorization_code",
-                "code": user_input["code"],
+                "code": authorization_code,
                 "client_id": self._implementation.client_id,
                 "client_secret": self._implementation.client_secret,
-                "redirect_uri": self._implementation.redirect_uri,
+                "redirect_uri": "https://my.home-assistant.io/redirect/oauth",
             }
             
             session = async_get_clientsession(self.hass)

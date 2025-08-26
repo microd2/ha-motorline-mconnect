@@ -27,6 +27,13 @@
           "data": {
             "setup_complete": "I have configured the OAuth2 application credentials"
           }
+        },
+        "gmail_code_entry": {
+          "title": "Enter Gmail Authorization Code",
+          "description": "After signing in to Google, you should have been redirected to a page showing an authorization code.\n\nCopy the authorization code from that page and paste it below:",
+          "data": {
+            "authorization_code": "Authorization Code"
+          }
         }
       },
       "error": {
