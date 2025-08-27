@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Self
+from urllib.parse import urlparse, parse_qs
 import logging
 import voluptuous as vol
 from homeassistant import config_entries
@@ -10,9 +11,6 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
-_LOGGER = logging.getLogger(__name__)
-
 from .const import (
     DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
     AUTH_DOMAIN_GMAIL, GMAIL_SCOPES,
@@ -21,9 +19,12 @@ from .api import (
     MConnectClient, MConnectAuthError, MConnectCommError,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
 
     DOMAIN = DOMAIN
+    domain: str = DOMAIN
     VERSION = 1
 
     @property
@@ -34,15 +35,20 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
     @property
     def scopes(self) -> list[str]:
         """OAuth scopes required for Gmail access."""
+        self.logger.warning("OAuth scopes property called. scopes=%s", GMAIL_SCOPES)
+        _LOGGER.warning("OAuth scopes requested: %s", GMAIL_SCOPES)
         return GMAIL_SCOPES
 
     # 👇 NEW: Google-specific authorize params
     @property
     def extra_authorize_data(self) -> dict[str, Any]:
-        """Extra params for Google OAuth."""
+        # Ensure scope is included in the authorize URL
+        scope = " ".join(GMAIL_SCOPES)
+        self.logger.warning("extra_authorize_data: adding scope=%s", scope)
         return {
             "access_type": "offline",
             "prompt": "consent",
+            "scope": scope,          # 👈 add this line
         }
 
 
@@ -58,6 +64,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         self._reauth_entry: config_entries.ConfigEntry | None = None
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self.logger.warning("async_step_user: domain=%r, handler_class_domain=%r", getattr(self, "domain", None), getattr(self.__class__, "domain", None))
         if user_input is not None:
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
@@ -88,10 +95,25 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         )
 
     async def async_step_oauth_setup(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Handle the confirmation and go straight into the OAuth helper."""
+        """Confirm and kick off the OAuth helper."""
         if user_input and user_input.get("setup_complete"):
-            return await self.async_step_pick_implementation()
+            # First call (no args): returns an EXTERNAL_STEP dict that includes the URL.
+            result = await super().async_step_pick_implementation()
+
+            # Log the exact authorize URL HA is about to open.
+            url = result.get("url")
+            if url:
+                self.logger.warning("AUTH URL = %s", url)
+                self.logger.warning("AUTH URL QUERY = %s", parse_qs(urlparse(url).query))
+            else:
+                self.logger.warning("No auth URL present in pick_implementation result: %s", result)
+
+            # Return the normal result so the UI continues to the external step
+            return result
+
         return self.async_abort(reason="oauth_setup_incomplete")
+
+
 
     async def async_step_pick_implementation(self, user_input=None) -> ConfigFlowResult:
         return await super().async_step_pick_implementation(user_input)
