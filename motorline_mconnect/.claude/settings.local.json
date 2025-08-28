@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(supervisorctl status:*)",
+      "Bash(rm:*)",
+      "Bash(pkill:*)",
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "WebSearch",
+      "WebFetch(domain:developers.home-assistant.io)",
+      "WebFetch(domain:www.home-assistant.io)"
+    ],
+    "deny": [],
+    "ask": [],
+    "additionalDirectories": [
+      "/workspaces/core/config/custom_components",
+      "/workspaces/core"
+    ]
+  }
+}

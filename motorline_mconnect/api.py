@@ -67,15 +67,15 @@ class MConnectClient:
             safe_payload["password"] = "***MASKED***"
         if "client_secret" in safe_payload:
             safe_payload["client_secret"] = "***MASKED***"
-            
+
         safe_headers = headers.copy() if headers else {}
         if "Authorization" in safe_headers:
             safe_headers["Authorization"] = f"Bearer ***MASKED***"
-            
+
         LOGGER.info(f"MConnect API Call: {method} {url}")
         LOGGER.info(f"  Request Headers: {json.dumps(safe_headers, indent=2)}")
         LOGGER.info(f"  Request Payload: {json.dumps(safe_payload, indent=2)}")
-        
+
         if response_status is not None:
             LOGGER.info(f"  Response Status: {response_status}")
         if response_text is not None:
@@ -83,14 +83,14 @@ class MConnectClient:
             truncated_response = response_text[:1000] + "..." if len(response_text) > 1000 else response_text
             LOGGER.info(f"  Response Body: {truncated_response}")
 
-    async def async_begin_login(self, username: str, password: str) -> None:
-        # ---------- Login / MFA ----------
+    async def async_begin_login(self, username: str, password: str) -> dict:
         """
         Step 1: Initial login (triggers OTP email).
         POST /auth/token with { grant_type: "authorization", email, password, mfa: true }.
+        Returns the token response {access_token, refresh_token, ...}.
         """
         self._last_username = username  # store for re-login
-        self._last_password = password  # store for re-loginneeded
+        self._last_password = password  # store for re-login
 
         url = f"{BASE_URL}/auth/token"
         payload = {
@@ -100,19 +100,17 @@ class MConnectClient:
             "mfa": True,
         }
         headers = _build_headers(self._user_agent, self._timezone)
-        
+
         # Log the request
         self._log_api_call("POST", url, payload, headers)
-        
+
         try:
             async with self._session.post(
                 url, json=payload, headers=headers, timeout=ClientTimeout(total=15)
             ) as resp:
                 text = await resp.text()
-                
-                # Log the response
                 self._log_api_call("POST", url, response_status=resp.status, response_text=text)
-                
+
                 if resp.status == 401:
                     raise MConnectAuthError("Invalid credentials")
                 if resp.status == 429:
@@ -120,14 +118,20 @@ class MConnectClient:
                 if 500 <= resp.status < 600:
                     raise MConnectServerError(f"Server error during login: {text}")
                 if resp.status != 200:
-                    raise MConnectCommError(
-                        f"Unexpected login status {resp.status}: {text}"
-                    )
-                await resp.read()
+                    raise MConnectCommError(f"Unexpected login status {resp.status}: {text}")
+
+                data = await resp.json()
+
+                # --- store tokens for later MFA verification ---
+                self._user_access_token = data.get("access_token")
+                self._user_refresh_token = data.get("refresh_token")
+                return data
+
         except TimeoutError as e:
             raise MConnectCommError("Login timeout") from e
         except ClientError as e:
             raise MConnectCommError(f"Login connection error: {e}") from e
+
 
     async def async_complete_login_with_mailbox(
         self, provider: str, oauth_tokens: dict
@@ -136,19 +140,16 @@ class MConnectClient:
         End-to-end mailbox flow:
 
           1) Wait (≤5 min) for 'Verification code' email → extract code
-          2) POST /user/mfa/verify
-             - if 200 → success
-             - if 403 MaxTrustedDevicesError → run "End all sessions" reset flow
-          3) GET /homes, then POST /homes/auth/token → exchange to home-scoped token
-          4) Return home tokens { access, refresh, expires_in, expires_at, home_id, user_refresh }
+          2) POST /user/mfa/verify with stored Bearer token
+          3) If OK → fetch homes and exchange to home token
         """
         headers_api = _build_headers(self._user_agent, self._timezone)
+        # --- include the access token from async_begin_login ---
+        if getattr(self, "_user_access_token", None):
+            headers_api["Authorization"] = f"Bearer {self._user_access_token}"
+        headers_api["Content-Type"] = "application/json"
 
         async def _poll_for_code(kind: str) -> str:
-            """
-            kind: "verification" or "end_all"  
-            Use the new MFA module for robust email polling.
-            """
             try:
                 return await wait_for_mfa_code(
                     session=self._session,
@@ -175,16 +176,13 @@ class MConnectClient:
                 timeout=ClientTimeout(total=15),
             ) as resp:
                 text = await resp.text()
-                
-                # Log the MFA verification response
                 self._log_api_call("POST", VERIFY_URL, response_status=resp.status, response_text=text)
 
                 if resp.status == 200:
                     data = await resp.json()
-                    user_access = data.get("access_token")
-                    user_refresh = data.get("refresh_token")
+                    user_access = data.get("access_token") or self._user_access_token
+                    user_refresh = data.get("refresh_token") or self._user_refresh_token
 
-                    # use class-level helpers (no duplication!)
                     homes = await self.async_get_homes(user_access)
                     if not homes:
                         raise MConnectAuthError("No homes available for this account")
@@ -199,88 +197,6 @@ class MConnectClient:
                     home_tokens["user_refresh"] = user_refresh
                     return home_tokens
 
-                # ---- 2) Kickoff-all-sessions flow ----
-                if resp.status == 403 and "MaxTrustedDevicesError" in (text or ""):
-                    # Log reset trigger request
-                    self._log_api_call("GET", RESET_URL, headers=headers_api)
-                    
-                    async with self._session.get(
-                        RESET_URL, headers=headers_api, timeout=ClientTimeout(total=15)
-                    ) as r2:
-                        r2_text = await r2.text()
-                        
-                        # Log reset trigger response
-                        self._log_api_call("GET", RESET_URL, response_status=r2.status, response_text=r2_text)
-                        
-                        if r2.status != 200:
-                            raise MConnectAuthError(
-                                f"Reset trigger failed: {r2.status} {r2_text}"
-                            )
-
-                    reset_code = await _poll_for_code("end_all")
-
-                    url_del = RESET_CODE_URL.format(code=reset_code)
-                    async with self._session.delete(
-                        url_del, headers=headers_api, timeout=ClientTimeout(total=15)
-                    ) as r3:
-                        if r3.status != 200:
-                            raise MConnectAuthError(
-                                f"Reset confirm failed: {r3.status} {await r3.text()}"
-                            )
-
-                    async with self._session.delete(
-                        REMOVE_THIS_DEVICE_URL,
-                        headers=headers_api,
-                        timeout=ClientTimeout(total=15),
-                    ) as r4:
-                        if r4.status != 200:
-                            raise MConnectAuthError(
-                                f"Trusted device delete failed: {r4.status} {await r4.text()}"
-                            )
-
-                    if not getattr(self, "_last_username", None) or not getattr(
-                        self, "_last_password", None
-                    ):
-                        raise MConnectAuthError(
-                            "Cannot re-login: missing stored credentials."
-                        )
-                    await self.async_begin_login(
-                        self._last_username, self._last_password
-                    )
-
-                    verif_code = await _poll_for_code("verification")
-                    payload = {"code": verif_code, "platform": "Win32", "model": "edge"}
-                    async with self._session.post(
-                        VERIFY_URL,
-                        json=payload,
-                        headers=headers_api,
-                        timeout=ClientTimeout(total=15),
-                    ) as r5:
-                        t5 = await r5.text()
-                        if r5.status != 200:
-                            raise MConnectAuthError(
-                                f"MFA after reset failed: {r5.status} {t5}"
-                            )
-                        data = await r5.json()
-                        user_access = data.get("access_token")
-                        user_refresh = data.get("refresh_token")
-
-                        homes = await self.async_get_homes(user_access)
-                        if not homes:
-                            raise MConnectAuthError(
-                                "No homes available for this account"
-                            )
-                        home_id = homes[0].get("id")
-                        if not home_id:
-                            raise MConnectAuthError("No valid home ID found")
-
-                        home_tokens = await self.async_exchange_home_token(
-                            user_access, home_id
-                        )
-                        home_tokens["home_id"] = home_id
-                        home_tokens["user_refresh"] = user_refresh
-                        return home_tokens
-
                 if resp.status == 401:
                     raise MConnectAuthError("MFA rejected")
                 if resp.status == 429:
@@ -293,7 +209,6 @@ class MConnectClient:
             raise MConnectCommError("MFA submit timeout") from e
         except ClientError as e:
             raise MConnectCommError(f"MFA submit connection error: {e}") from e
-
 
     async def async_get_account_info(self, tokens: dict) -> dict:
         # TODO: If you have an endpoint that returns a stable account/user id, call it.
@@ -356,10 +271,10 @@ class MConnectClient:
                 ALL_DEVICES_URL, headers=headers, timeout=ClientTimeout(total=20)
             ) as resp:
                 response_text = await resp.text()
-                
+
                 # Log devices fetch response
                 self._log_api_call("GET", ALL_DEVICES_URL, response_status=resp.status, response_text=response_text)
-                
+
                 if resp.status == 401:
                     raise MConnectAuthError("Access token expired/invalid")
                 if resp.status == 429:
@@ -568,18 +483,18 @@ class MConnectClient:
         """
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
-        
+
         # Log homes request
         self._log_api_call("GET", HOMES_URL, headers=headers)
-        
+
         async with self._session.get(
             HOMES_URL, headers=headers, timeout=ClientTimeout(total=15)
         ) as resp:
             response_text = await resp.text()
-            
+
             # Log homes response
             self._log_api_call("GET", HOMES_URL, response_status=resp.status, response_text=response_text)
-            
+
             if resp.status != 200:
                 raise MConnectCommError(
                     f"Failed to fetch homes: {resp.status} {response_text}"
@@ -593,10 +508,10 @@ class MConnectClient:
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
         payload = {"home_id": home_id}
-        
+
         # Log home token exchange request
         self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)
-        
+
         async with self._session.post(
             HOMES_TOKEN_URL,
             json=payload,
@@ -604,10 +519,10 @@ class MConnectClient:
             timeout=ClientTimeout(total=15),
         ) as resp:
             response_text = await resp.text()
-            
+
             # Log home token exchange response
             self._log_api_call("POST", HOMES_TOKEN_URL, response_status=resp.status, response_text=response_text)
-            
+
             if resp.status != 200:
                 raise MConnectCommError(
                     f"Failed to exchange home token: {resp.status} {response_text}"
