@@ -37,9 +37,9 @@
         }
       },
       "error": {
-        "invalid_auth": "Authentication failed",
-        "cannot_connect": "Connection error",
-        "unknown": "Unexpected error",
+        "invalid_auth": "Authentication failed : {error}",
+        "cannot_connect": "Connection error : {error}",
+        "unknown": "Unexpected error : {error}",
         "no_implementations": "No OAuth2 implementations available. Using fallback authentication for development."
       }
     }

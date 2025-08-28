@@ -61,6 +61,7 @@ class MConnectClient:
         self._timezone = timezone
 
     def _log_api_call(self, method: str, url: str, payload: dict | None = None, headers: dict | None = None, response_status: int | None = None, response_text: str | None = None) -> None:
+        return
         """Log API calls to MConnect endpoints."""
         # Mask sensitive data
         safe_payload = payload.copy() if payload else {}
@@ -226,7 +227,9 @@ class MConnectClient:
         if not homes:
             raise MConnectAuthError("No homes available for this account")
 
-        home_id = homes[0].get("id")
+        LOGGER.info(f"Found {len(homes)} homes")
+
+        home_id = homes[0].get("_id")
 
         if not home_id:
             raise MConnectAuthError("No valid home ID found")
@@ -543,7 +546,7 @@ class MConnectClient:
             response_text = await resp.text()
 
             # Log homes response
-            self._log_api_call("GET", HOMES_URL, response_status=resp.status, response_text=response_text)
+            self._log_api_call("GET", HOMES_GUEST_URL, response_status=resp.status, response_text=response_text)
 
             if resp.status != 200:
                 raise MConnectCommError(
@@ -567,7 +570,7 @@ class MConnectClient:
                 raise MConnectCommError(f"Failed to end all sessions: {resp.status} {response_text}")
 
 
-    async def async_endAllSessionsConfirm(self, access_token: str, mfaCode: str) -> list[dict]:
+    async def async_endAllSessionsConfirm(self, access_token: str, mfaCode: str) -> None:
         """
         Complete End All Sessions MFA
         """
@@ -580,16 +583,18 @@ class MConnectClient:
             if resp.status != 200:
                 raise MConnectCommError(f"Failed to verify End All Sessions: {resp.status} {response_text}")
 
-            return await resp.json()
+
 
 
     async def async_exchange_home_token(self, access_token: str, home_id: str) -> dict:
         """
         Exchange a user access token for a home-scoped token.
         """
+        LOGGER.info(f"Logging in to home {home_id}")
+
         headers = _build_headers(self._user_agent, self._timezone)
-        headers["Authorization"] = f"Bearer {access_token}"
-        payload = {"home_id": home_id}
+        #headers["Authorization"] = f"Bearer {access_token}"
+        payload = {"grant_type":"authorization","code":access_token,"home_id": home_id}
 
         # Log home token exchange request
         self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)

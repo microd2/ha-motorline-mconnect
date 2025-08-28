@@ -5,12 +5,12 @@ from typing import Any, Self
 from urllib.parse import urlparse, parse_qs
 import logging
 import voluptuous as vol
-from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.helpers import selector
-from homeassistant.helpers import config_entry_oauth2_flow
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant import config_entries # type: ignore
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME # type: ignore
+from homeassistant.config_entries import ConfigFlowResult # type: ignore
+from homeassistant.helpers import selector # type: ignore
+from homeassistant.helpers import config_entry_oauth2_flow # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
 from .const import (
     DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
     AUTH_DOMAIN_GMAIL, GMAIL_SCOPES,
@@ -21,7 +21,7 @@ from .api import (
 
 _LOGGER = logging.getLogger(__name__)
 
-class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN):
+class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMAIN): # pyright: ignore[reportGeneralTypeIssues, reportCallIssue]
 
     DOMAIN = DOMAIN
     domain: str = DOMAIN
@@ -62,6 +62,9 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         self._password: str | None = None
         self._oauth_tokens: dict | None = None
         self._reauth_entry: config_entries.ConfigEntry | None = None
+        self._oauth_started = False   # Guard against multiple callbacks
+        self._oauth_done = False      # Guard against multiple callbacks
+
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
         self.logger.warning("async_step_user: domain=%r, handler_class_domain=%r", getattr(self, "domain", None), getattr(self.__class__, "domain", None))
@@ -97,6 +100,12 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
     async def async_step_oauth_setup(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Confirm and kick off the OAuth helper."""
         if user_input and user_input.get("setup_complete"):
+
+            if self._oauth_started:                     # debounce
+                return self.async_abort(reason="already_in_progress")
+
+            self._oauth_started = True
+
             # First call (no args): returns an EXTERNAL_STEP dict that includes the URL.
             result = await super().async_step_pick_implementation()
 
@@ -123,6 +132,11 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
 
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
         """Handle OAuth2 callback from Gmail authorization."""
+        if self._oauth_done:                              # 👈 ignore duplicate callback
+            return self.async_abort(reason="already_configured")
+
+        self._oauth_done = True
+
         _LOGGER.info("Gmail OAuth2 callback keys: %s", list(data.keys()))
         # Store the OAuth2 tokens for Gmail access
         self._oauth_tokens = data
@@ -193,12 +207,14 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             account_info = await client.async_get_account_info(tokens)
 
         except MConnectAuthError as e:
+            _LOGGER.error(f"Failed completing MConnect Config Flow: {str(e)}")
             return self.async_show_form(
                 step_id="user",
                 errors={"base": "invalid_auth"},
                 description_placeholders={"error": str(e)},
             )
         except MConnectCommError as e:
+            _LOGGER.error(f"MConnect communication failure: {str(e)}")
             return self.async_show_form(
                 step_id="user",
                 errors={"base": "cannot_connect"},

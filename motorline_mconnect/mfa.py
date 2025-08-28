@@ -70,7 +70,7 @@ class MFAManager:
         self._start_time = time.time()
         deadline = time.monotonic() + timeout
         min_timestamp = self._start_time - 30  # Allow 30s skew
-
+        poll_count = 0
         self._polling = True
         try:
             LOGGER.info(f"MFA: Starting polling loop, deadline in {timeout}s")
