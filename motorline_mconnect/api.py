@@ -44,6 +44,7 @@ RESET_URL = f"{BASE_URL}/user/trusted_devices/reset"
 RESET_CODE_URL = f"{BASE_URL}/user/trusted_devices/reset/{{code}}"
 REMOVE_THIS_DEVICE_URL = f"{BASE_URL}/user/trusted_device"
 HOMES_URL = f"{BASE_URL}/homes"
+HOMES_GUEST_URL = f"{BASE_URL}/guests/homes"
 HOMES_TOKEN_URL = f"{BASE_URL}/homes/auth/token"
 USER_REFRESH_URL = f"{BASE_URL}/auth/token/refresh"
 HOME_REFRESH_URL = f"{BASE_URL}/homes/auth/token/refresh"
@@ -163,7 +164,7 @@ class MConnectClient:
 
         # ---- 1) normal verification ----
         verif_code = await _poll_for_code("verification")
-        payload = {"code": verif_code, "platform": "Win32", "model": "edge"}
+        payload = {"code": verif_code, "platform": self._user_agent, "model": "edge"}
 
         # Log the MFA verification request
         self._log_api_call("POST", VERIFY_URL, payload, headers_api)
@@ -179,26 +180,27 @@ class MConnectClient:
                 self._log_api_call("POST", VERIFY_URL, response_status=resp.status, response_text=text)
 
                 if resp.status == 200:
+
                     data = await resp.json()
                     user_access = data.get("access_token") or self._user_access_token
                     user_refresh = data.get("refresh_token") or self._user_refresh_token
 
-                    homes = await self.async_get_homes(user_access)
-                    if not homes:
-                        raise MConnectAuthError("No homes available for this account")
-                    home_id = homes[0].get("id")
-                    if not home_id:
-                        raise MConnectAuthError("No valid home ID found")
-
-                    home_tokens = await self.async_exchange_home_token(
-                        user_access, home_id
-                    )
-                    home_tokens["home_id"] = home_id
-                    home_tokens["user_refresh"] = user_refresh
-                    return home_tokens
+                    return await self.async_logIntoHome(user_access,user_refresh)
 
                 if resp.status == 401:
                     raise MConnectAuthError("MFA rejected")
+
+                if resp.status == 403:
+                    # TOO MANY DEVICES
+                     response_text = await resp.text()
+                     if "MaxTrustedDevicesError" in response_text:
+                        LOGGER.info(f"Max devices reached")
+                        await self.async_endAllSessions(self._user_access_token)
+                        LOGGER.info(f" Waiting for end all code")
+                        endAllMFACode = await _poll_for_code("end_all")
+                        await self.async_endAllSessionsConfirm(self._user_access_token,endAllMFACode)
+                        return await self.async_logIntoHome(self._user_access_token, self._user_refresh_token)
+
                 if resp.status == 429:
                     raise MConnectRateLimitError("Rate limited during MFA")
                 if 500 <= resp.status < 600:
@@ -214,6 +216,30 @@ class MConnectClient:
         # TODO: If you have an endpoint that returns a stable account/user id, call it.
         # If not, you can return {'account_id': username} from config_flow instead.
         return {"account_id": "mconnect-account"}
+
+    async def async_logIntoHome(self, userLoginBearerToken : str, userLoginRefreshToken : str ) -> dict:
+        LOGGER.info(f" Logging in to home")
+
+        homes = await self.async_get_homes(userLoginBearerToken)
+        guesthomes = await self.async_get_guesthomes(userLoginBearerToken)
+        homes = homes + guesthomes
+        if not homes:
+            raise MConnectAuthError("No homes available for this account")
+
+        home_id = homes[0].get("id")
+
+        if not home_id:
+            raise MConnectAuthError("No valid home ID found")
+
+        home_tokens = await self.async_exchange_home_token(
+            userLoginBearerToken, home_id
+        )
+        home_tokens["home_id"] = home_id
+        home_tokens["user_refresh"] = userLoginRefreshToken
+
+        LOGGER.info(f" Logged in to Home")
+        return home_tokens
+
 
     async def async_full_login_via_mailbox(
         self, username: str, password: str, provider: str, email_oauth: dict
@@ -500,6 +526,62 @@ class MConnectClient:
                     f"Failed to fetch homes: {resp.status} {response_text}"
                 )
             return await resp.json()
+
+    async def async_get_guesthomes(self, access_token: str) -> list[dict]:
+        """
+        Get list of guest homes available to this user.
+        """
+        headers = _build_headers(self._user_agent, self._timezone)
+        headers["Authorization"] = f"Bearer {access_token}"
+
+        # Log homes request
+        self._log_api_call("GET", HOMES_GUEST_URL, headers=headers)
+
+        async with self._session.get(
+            HOMES_GUEST_URL, headers=headers, timeout=ClientTimeout(total=15)
+        ) as resp:
+            response_text = await resp.text()
+
+            # Log homes response
+            self._log_api_call("GET", HOMES_URL, response_status=resp.status, response_text=response_text)
+
+            if resp.status != 200:
+                raise MConnectCommError(
+                    f"Failed to fetch homes: {resp.status} {response_text}"
+                )
+            return await resp.json()
+
+
+
+    async def async_endAllSessions(self, access_token: str) -> None:
+        """
+        Ask MConnect to end all logged in sessions.
+        """
+        headers = _build_headers(self._user_agent, self._timezone)
+        headers["Authorization"] = f"Bearer {access_token}"
+
+        async with self._session.get(RESET_URL, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+            response_text = await resp.text()
+
+            if resp.status != 200:
+                raise MConnectCommError(f"Failed to end all sessions: {resp.status} {response_text}")
+
+
+    async def async_endAllSessionsConfirm(self, access_token: str, mfaCode: str) -> list[dict]:
+        """
+        Complete End All Sessions MFA
+        """
+        headers = _build_headers(self._user_agent, self._timezone)
+        headers["Authorization"] = f"Bearer {access_token}"
+
+        async with self._session.delete(RESET_CODE_URL.format(code=mfaCode), headers=headers, timeout=ClientTimeout(total=15)) as resp:
+            response_text = await resp.text()
+
+            if resp.status != 200:
+                raise MConnectCommError(f"Failed to verify End All Sessions: {resp.status} {response_text}")
+
+            return await resp.json()
+
 
     async def async_exchange_home_token(self, access_token: str, home_id: str) -> dict:
         """

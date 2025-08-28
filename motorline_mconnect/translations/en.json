@@ -23,7 +23,7 @@
         },
         "oauth_setup": {
           "title": "OAuth2 Application Setup Required",
-          "description": "Before you can use {provider} for MFA, you need to set up OAuth2 application credentials:\n\n1. Go to Settings → Devices & Services → ⋮ → Application credentials\n2. Click 'Add Application Credential'\n3. Choose '{provider}' as the application\n4. Enter your OAuth2 app details (client ID, client secret)\n5. Use authorization domain: `{auth_domain}`\n\nOnce configured, check the box below to continue.",
+          "description": "You need to set up OAuth2 application credentials:\n\n1. Go to Settings → Devices & Services → ⋮ → Application credentials\n2. Click 'Add Application Credential'\n3. Choose '{provider}' as the application\n4. Enter your OAuth2 app details (client ID, client secret)\n5. Use authorization domain: `{auth_domain}`\n\nOnce configured, check the box below to continue.",
           "data": {
             "setup_complete": "I have configured the OAuth2 application credentials"
           }
@@ -38,10 +38,9 @@
       },
       "error": {
         "invalid_auth": "Authentication failed",
-        "cannot_connect": "Connection error", 
+        "cannot_connect": "Connection error",
         "unknown": "Unexpected error",
         "no_implementations": "No OAuth2 implementations available. Using fallback authentication for development."
       }
     }
   }
-  
