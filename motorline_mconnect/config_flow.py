@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigFlowResult # type: ignore
 from homeassistant.helpers import selector # type: ignore
 from homeassistant.helpers import config_entry_oauth2_flow # type: ignore
 from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
+from homeassistant.helpers import config_entry_oauth2_flow as oauth2 # type: ignore
 from .const import (
     DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
     AUTH_DOMAIN_GMAIL, GMAIL_SCOPES,
@@ -64,6 +65,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         self._reauth_entry: config_entries.ConfigEntry | None = None
         self._oauth_started = False   # Guard against multiple callbacks
         self._oauth_done = False      # Guard against multiple callbacks
+        self._oauth_impl: str | None = None
 
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
@@ -132,17 +134,23 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
 
     async def async_oauth_create_entry(self, data: dict) -> ConfigFlowResult:
         """Handle OAuth2 callback from Gmail authorization."""
-        if self._oauth_done:                              # 👈 ignore duplicate callback
+        if self._oauth_done:  # ignore duplicate callback
             return self.async_abort(reason="already_configured")
-
         self._oauth_done = True
 
+        # data usually contains {"auth_implementation": "...", "token": {...}, ...}
+        token = data.get("token") or data            # <-- store *only* the token dict
+        auth_impl = data.get("auth_implementation")  # <-- keep the impl id for lookups
+
         _LOGGER.info("Gmail OAuth2 callback keys: %s", list(data.keys()))
-        # Store the OAuth2 tokens for Gmail access
-        self._oauth_tokens = data
+        self._oauth_tokens = token
+        self._oauth_impl = auth_impl
         _LOGGER.info("Gmail OAuth2 tokens stored, proceeding with MConnect login")
-        # Now we have Gmail access - proceed with MConnect login
+
         return await self._finish_login()
+
+
+
 
     async def async_step_reauth(self, entry_data: dict | None = None) -> ConfigFlowResult:
         """Handle reauth when tokens expire."""
@@ -154,21 +162,25 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             stored_oauth = self._reauth_entry.data.get(CONF_EMAIL_OAUTH)
             stored_mconnect = self._reauth_entry.data.get(CONF_MCONNECT_TOKENS)
 
-            # Try refreshing existing tokens first (like C# RefreshTokenAsync)
-            if stored_mconnect and stored_mconnect.get("refresh_token"):
+            # Try refreshing existing tokens first (fast path)
+            stored_mconnect = (self._reauth_entry.data or {}).get(CONF_MCONNECT_TOKENS)
+
+            refresh = None
+            home_id = None
+            if stored_mconnect:
+                # prefer canonical 'refresh', accept legacy 'refresh_token'
+                refresh = stored_mconnect.get("refresh") or stored_mconnect.get("refresh_token")
+                home_id = stored_mconnect.get("home_id")
+
+            if refresh and home_id:
                 session = async_get_clientsession(self.hass)
                 timezone = str(self.hass.config.time_zone)
                 client = MConnectClient(session, "HomeAssistant", timezone)
                 try:
-                    # Attempt to refresh home tokens
-                    home_id = stored_mconnect.get("home_id")
-                    refresh_token = stored_mconnect.get("refresh_token")
-                    if home_id and refresh_token:
-                        refreshed_tokens = await client.async_refresh_home_tokens(home_id, refresh_token)
-                        # Update entry with refreshed tokens
-                        entry_data = dict(self._reauth_entry.data)
-                        entry_data[CONF_MCONNECT_TOKENS] = refreshed_tokens
-                        return self.async_update_reload_and_abort(self._reauth_entry, data=entry_data)
+                    refreshed_tokens = await client.async_refresh_home_tokens(home_id, refresh)
+                    entry_data = dict(self._reauth_entry.data)
+                    entry_data[CONF_MCONNECT_TOKENS] = refreshed_tokens
+                    return self.async_update_reload_and_abort(self._reauth_entry, data=entry_data)
                 except MConnectAuthError:
                     # Token refresh failed, fall through to full re-authentication
                     pass
@@ -176,9 +188,23 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
                     # Any other error, fall through to full re-authentication
                     pass
 
-            # If token refresh fails or no tokens, use existing OAuth tokens if valid
             if stored_oauth:
-                self._oauth_tokens = stored_oauth
+                # Normalize token shape and ensure it's at entry.data["token"]
+                token = stored_oauth.get("token") if isinstance(stored_oauth, dict) else stored_oauth
+                entry = self._reauth_entry
+                if entry:
+                    data = dict(entry.data)
+                    data["token"] = token
+                    self.hass.config_entries.async_update_entry(entry, data=data)
+
+                    # Refresh Gmail access token via HA session
+                    impl = await oauth2.async_get_config_entry_implementation(self.hass, entry)
+                    sess = oauth2.OAuth2Session(self.hass, entry, impl)
+                    await sess.async_ensure_token_valid()
+                    self._oauth_tokens = sess.token
+                else:
+                    self._oauth_tokens = token
+
                 return await self._finish_login()
 
         # Re-run OAuth to refresh mailbox tokens, then finish login
@@ -237,7 +263,9 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             CONF_PASSWORD: self._password,  # stored to enable always-on auto-login
             CONF_EMAIL_PROVIDER: "motorline_mconnect_gmail",
             CONF_EMAIL_OAUTH: self._oauth_tokens,
+            "auth_implementation": self._oauth_impl,  # <-- helps OAuth2Session find impl
             CONF_MCONNECT_TOKENS: tokens,
+            "token": self._oauth_tokens              # where OAuth2Session expects it
         }
 
         if self._reauth_entry:

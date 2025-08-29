@@ -12,8 +12,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 from .const import LOGGER
 
 from .models import CoverDevice, DeviceMeta, LightDevice, SwitchDevice
-from .mfa import wait_for_mfa_code
-
+from .mfa import wait_for_mfa_code, MailboxAuthError  # <-- import the new error
 
 # ----- Exceptions used by coordinator/backoff -----
 class MConnectError(Exception):
@@ -46,8 +45,6 @@ REMOVE_THIS_DEVICE_URL = f"{BASE_URL}/user/trusted_device"
 HOMES_URL = f"{BASE_URL}/homes"
 HOMES_GUEST_URL = f"{BASE_URL}/guests/homes"
 HOMES_TOKEN_URL = f"{BASE_URL}/homes/auth/token"
-USER_REFRESH_URL = f"{BASE_URL}/auth/token/refresh"
-HOME_REFRESH_URL = f"{BASE_URL}/homes/auth/token/refresh"
 ALL_DEVICES_URL = f"{BASE_URL}/rooms"
 
 
@@ -162,6 +159,8 @@ class MConnectClient:
                 )
             except TimeoutError as e:
                 raise MConnectAuthError(str(e)) from e
+            except MailboxAuthError as e:
+                raise MConnectAuthError(f"Mailbox auth failed: {e}") from e
 
         # ---- 1) normal verification ----
         verif_code = await _poll_for_code("verification")
@@ -258,7 +257,7 @@ class MConnectClient:
             return tokens
         try:
             async with self._session.post(
-                USER_REFRESH_URL,
+                LOGIN_URL,
                 json={"refresh_token": tokens["refresh"]},
                 timeout=ClientTimeout(total=15),
             ) as resp:
@@ -629,7 +628,7 @@ class MConnectClient:
         headers = _build_headers(self._user_agent, self._timezone)
         payload = {"refresh_token": refresh_token}
         async with self._session.post(
-            USER_REFRESH_URL,
+            LOGIN_URL,
             json=payload,
             headers=headers,
             timeout=ClientTimeout(total=15),
@@ -654,7 +653,7 @@ class MConnectClient:
         headers = _build_headers(self._user_agent, self._timezone)
         payload = {"home_id": home_id, "refresh_token": refresh_token}
         async with self._session.post(
-            HOME_REFRESH_URL,
+            HOMES_TOKEN_URL,
             json=payload,
             headers=headers,
             timeout=ClientTimeout(total=15),

@@ -18,6 +18,11 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 _OTP_RE = re.compile(r"\b(\d{6})\b")
 _SUBJECT_RE = re.compile(r"(Verification code|End all sessions) - (?P<code>\d{6})")
 
+class MailboxAuthError(Exception):
+    """Mailbox (e.g., Gmail) authentication is invalid (401)."""
+    pass
+
+
 
 class MFAManager:
     """Manages MFA code retrieval from email providers."""
@@ -59,10 +64,8 @@ class MFAManager:
             raise ValueError(f"Unsupported provider: {provider}")
 
         access_token = self._extract_access_token(oauth_tokens)
-        LOGGER.info(f"MFA: OAuth tokens structure: {oauth_tokens}")
         LOGGER.info(f"MFA: Extracted access token: {'✓' if access_token else '✗'}")
-        if access_token:
-            LOGGER.info(f"MFA: Token prefix: {access_token[:20]}...")
+
         if not access_token:
             LOGGER.error("MFA: No access token available from OAuth2 flow")
             raise ValueError("No access token available from OAuth2 flow")
@@ -203,6 +206,8 @@ class MFAManager:
                 url, headers=auth_header, params=params, timeout=ClientTimeout(total=15)
             ) as resp:
                 LOGGER.info(f"MFA: Gmail API response status: {resp.status}")
+                if resp.status == 401:
+                     raise MailboxAuthError("gmail_unauthenticated")
                 if resp.status != 200:
                     error_text = await resp.text()
                     LOGGER.error(f"MFA: Gmail API error {resp.status}: {error_text}")
