@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
-from homeassistant.components.application_credentials import AuthorizationServer
-from homeassistant.core import HomeAssistant
+from homeassistant.components.application_credentials import AuthorizationServer # type: ignore
+from homeassistant.core import HomeAssistant # type: ignore
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -4,11 +4,11 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.loader import async_get_integration
-from homeassistant.util import dt as dt_util
+from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.const import Platform # type: ignore
+from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.loader import async_get_integration # type: ignore
+from homeassistant.util import dt as dt_util # type: ignore
 
 
 try:
@@ -22,7 +22,7 @@ try:
 except Exception as e:
     raise
 
-PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT]
+PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

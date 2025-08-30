@@ -20,11 +20,12 @@ class MConnectError(Exception):
 
 
 class MConnectAuthError(MConnectError):
-    pass  # 401 / invalid or expired tokens
-
+    pass
 
 class MConnectRateLimitError(MConnectError):
-    pass  # 429
+    def __init__(self, *args, retry_after: float | None = None):
+        super().__init__(*args)
+        self.retry_after = retry_after
 
 
 class MConnectServerError(MConnectError):
@@ -42,10 +43,8 @@ VERIFY_URL = f"{BASE_URL}/user/mfa/verify"
 RESET_URL = f"{BASE_URL}/user/trusted_devices/reset"
 RESET_CODE_URL = f"{BASE_URL}/user/trusted_devices/reset/{{code}}"
 REMOVE_THIS_DEVICE_URL = f"{BASE_URL}/user/trusted_device"
-HOMES_URL = f"{BASE_URL}/homes"
-HOMES_GUEST_URL = f"{BASE_URL}/guests/homes"
 HOMES_TOKEN_URL = f"{BASE_URL}/homes/auth/token"
-ALL_DEVICES_URL = f"{BASE_URL}/rooms"
+
 
 
 class MConnectClient:
@@ -126,7 +125,7 @@ class MConnectClient:
                 self._user_refresh_token = data.get("refresh_token")
                 return data
 
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:
             raise MConnectCommError("Login timeout") from e
         except ClientError as e:
             raise MConnectCommError(f"Login connection error: {e}") from e
@@ -157,7 +156,7 @@ class MConnectClient:
                     code_type=kind,
                     timeout=300  # 5 minutes
                 )
-            except TimeoutError as e:
+            except asyncio.TimeoutError as e:
                 raise MConnectAuthError(str(e)) from e
             except MailboxAuthError as e:
                 raise MConnectAuthError(f"Mailbox auth failed: {e}") from e
@@ -207,7 +206,7 @@ class MConnectClient:
                     raise MConnectServerError(f"Server error during MFA: {text}")
                 raise MConnectCommError(f"Unexpected MFA status {resp.status}: {text}")
 
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:
             raise MConnectCommError("MFA submit timeout") from e
         except ClientError as e:
             raise MConnectCommError(f"MFA submit connection error: {e}") from e
@@ -268,7 +267,7 @@ class MConnectClient:
                 if 500 <= resp.status < 600:
                     raise MConnectServerError("Server error during refresh")
                 data = await resp.json()
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:
             raise MConnectCommError("Refresh timeout") from e
         except ClientError as e:
             raise MConnectCommError("Refresh connection error") from e
@@ -282,6 +281,8 @@ class MConnectClient:
 
     # ---------- Snapshot fetch ----------
     async def async_fetch_all(self, tokens: dict) -> dict:
+        url = f"{BASE_URL}/rooms"
+
         access = tokens.get("access")
         if not access:
             raise MConnectAuthError("Missing access token")
@@ -292,21 +293,26 @@ class MConnectClient:
         headers["Accept"] = "application/json"
 
         # Log devices fetch request
-        self._log_api_call("GET", ALL_DEVICES_URL, headers=headers)
+        self._log_api_call("GET", url, headers=headers)
 
         try:
-            async with self._session.get(
-                ALL_DEVICES_URL, headers=headers, timeout=ClientTimeout(total=20)
-            ) as resp:
+            async with self._session.get(url, headers=headers, timeout=ClientTimeout(total=20)) as resp:
                 response_text = await resp.text()
 
                 # Log devices fetch response
-                self._log_api_call("GET", ALL_DEVICES_URL, response_status=resp.status, response_text=response_text)
+                self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
 
                 if resp.status == 401:
                     raise MConnectAuthError("Access token expired/invalid")
                 if resp.status == 429:
-                    raise MConnectRateLimitError("Rate limited (429)")
+                    ra = resp.headers.get("Retry-After")
+                    retry_after = None
+                    if ra:
+                        try:
+                            retry_after = int(ra)
+                        except ValueError:
+                            retry_after = None
+                    raise MConnectRateLimitError("rate limited", retry_after=retry_after)
                 if 500 <= resp.status < 600:
                     raise MConnectServerError("Server error during fetch")
                 if resp.status != 200:
@@ -322,7 +328,7 @@ class MConnectClient:
                         f"Invalid JSON from fetch: {response_text[:200]}"
                     ) from e
 
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:
             raise MConnectCommError("Fetch timeout") from e
         except ClientError as e:
             raise MConnectCommError("Fetch connection error") from e
@@ -479,7 +485,7 @@ class MConnectClient:
         action: "on", "off", "open", "close", "stop", "set_position"
         kw: extra fields (e.g. position=30)
         """
-        url = f"https://api.mconnect.motorline.pt/devices/{device_id}/action"
+        url = f"{BASE_URL}/devices/{device_id}/action"
 
         # This is just a skeleton — adjust to the real MConnect API body
         if action in ("on", "off") or action in ("open", "close", "stop"):
@@ -509,19 +515,21 @@ class MConnectClient:
         """
         Get list of homes available to this user.
         """
+        url = f"{BASE_URL}/homes"
+
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
 
         # Log homes request
-        self._log_api_call("GET", HOMES_URL, headers=headers)
+        self._log_api_call("GET", url, headers=headers)
 
         async with self._session.get(
-            HOMES_URL, headers=headers, timeout=ClientTimeout(total=15)
+            url, headers=headers, timeout=ClientTimeout(total=15)
         ) as resp:
             response_text = await resp.text()
 
             # Log homes response
-            self._log_api_call("GET", HOMES_URL, response_status=resp.status, response_text=response_text)
+            self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
 
             if resp.status != 200:
                 raise MConnectCommError(
@@ -533,19 +541,20 @@ class MConnectClient:
         """
         Get list of guest homes available to this user.
         """
+        url = f"{BASE_URL}/guests/homes"
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
 
         # Log homes request
-        self._log_api_call("GET", HOMES_GUEST_URL, headers=headers)
+        self._log_api_call("GET", url, headers=headers)
 
         async with self._session.get(
-            HOMES_GUEST_URL, headers=headers, timeout=ClientTimeout(total=15)
+            url, headers=headers, timeout=ClientTimeout(total=15)
         ) as resp:
             response_text = await resp.text()
 
             # Log homes response
-            self._log_api_call("GET", HOMES_GUEST_URL, response_status=resp.status, response_text=response_text)
+            self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
 
             if resp.status != 200:
                 raise MConnectCommError(
@@ -673,6 +682,78 @@ class MConnectClient:
             }
 
 
+    async def async_list_scenes(self, tokens: dict) -> list[dict]:
+        """Return list of scenes; each should include at least 'id' and 'name'."""
+        access = tokens.get("access")
+        if not access:
+            raise MConnectAuthError("Missing access token")
+
+        headers = _build_headers(self._user_agent, self._timezone)
+        headers["Authorization"] = f"Bearer {access}"
+        url = f"{BASE_URL}/scenes"
+
+        self._log_api_call("GET", url, headers=headers)
+        async with self._session.get(url, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+            text = await resp.text()
+            self._log_api_call("GET", url, response_status=resp.status, response_text=text)
+
+            if resp.status == 401:
+                raise MConnectAuthError("Unauthorized (list scenes)")
+            if resp.status == 429:
+                ra = resp.headers.get("Retry-After")
+                try:
+                    retry_after = float(ra) if ra is not None else None
+                except ValueError:
+                    retry_after = None
+                raise MConnectRateLimitError("Rate limited (list scenes)", retry_after=retry_after)
+            if 500 <= resp.status < 600:
+                raise MConnectServerError(f"Server error during list scenes: {text}")
+            if resp.status != 200:
+                raise MConnectCommError(f"Failed to fetch scenes: {resp.status} {text}")
+
+            try:
+                data = await resp.json()
+            except Exception as e:
+                raise MConnectCommError(f"Invalid JSON from scenes: {text[:200]}") from e
+
+            # Normalize {"scenes":[...]} → [...]
+            if isinstance(data, dict) and isinstance(data.get("scenes"), list):
+                return data["scenes"]
+            if isinstance(data, list):
+                return data
+            return []
+
+    async def async_run_scene(self, tokens: dict, scene_id: str) -> None:
+        """Activate a scene by its id."""
+        access = tokens.get("access")
+        if not access:
+            raise MConnectAuthError("Missing access token")
+
+        headers = _build_headers(self._user_agent, self._timezone)
+        headers["Authorization"] = f"Bearer {access}"
+        url = f"{BASE_URL}/scenes/{scene_id}/activate"
+
+        self._log_api_call("POST", url, headers=headers)
+        async with self._session.post(url, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+            text = await resp.text()
+            self._log_api_call("POST", url, response_status=resp.status, response_text=text)
+
+            if resp.status == 401:
+                raise MConnectAuthError("Unauthorized (run scene)")
+            if resp.status == 429:
+                ra = resp.headers.get("Retry-After")
+                try:
+                    retry_after = float(ra) if ra is not None else None
+                except ValueError:
+                    retry_after = None
+                raise MConnectRateLimitError("Rate limited (run scene)", retry_after=retry_after)
+            if 500 <= resp.status < 600:
+                raise MConnectServerError(f"Server error during run scene: {text}")
+            if resp.status not in (200, 204):
+                raise MConnectCommError(f"Failed to run scene {scene_id}: {resp.status} {text}")
+
+
+
 # --- Helper functions ---
 
 
@@ -722,3 +803,4 @@ def resolve_cover_position(values) -> int | None:
             except (TypeError, ValueError):
                 continue
     return None
+

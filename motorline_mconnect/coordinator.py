@@ -46,9 +46,12 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             timezone=timezone,
         )
 
-        # Base polling config
-        self._base_interval_seconds = 90
-        self._jitter = 0.15  # ±15%
+        # polling policy
+        self._base_interval_seconds = 180      # idle
+        self._active_interval_seconds = 45     # shortly after user actions
+        self._recent_activity_window = 120     # seconds
+        self._recent_activity_until = 0.0
+        self._jitter = 0.15
 
         # Backoff state
         self._current_interval_seconds = self._base_interval_seconds
@@ -62,28 +65,61 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             update_interval=self._jittered_interval(),
         )
 
+    def note_recent_activity(self) -> None:
+        self._recent_activity_until = time.time() + self._recent_activity_window
+
+    def _compute_target_base_interval(self) -> float:
+        return self._active_interval_seconds if time.time() < self._recent_activity_until else self._base_interval_seconds
+
     # ----- interval helpers -----
     def _jittered_interval(self) -> timedelta:
         factor = 1.0 + random.uniform(-self._jitter, self._jitter)
         secs = int(self._base_interval_seconds * factor)
         return timedelta(seconds=max(1, secs))
 
-    def _apply_success_interval(self) -> None:
-        self._current_interval_seconds = self._base_interval_seconds
-        self.update_interval = self._jittered_interval()
-        _LOGGER.debug("Polling interval reset to base with jitter: %s", self.update_interval)
 
-    def _apply_backoff_interval(self, reason: str) -> None:
-        self._current_interval_seconds = min(
-            int(self._current_interval_seconds * self._backoff_multiplier),
-            self._max_backoff_seconds,
-        )
+    def _apply_success_interval(self) -> None:
+        """Normal cadence: adaptive base (active vs idle) + jitter."""
+        # Decide active vs idle base interval
+        base = self._active_interval_seconds if time.time() < self._recent_activity_until else self._base_interval_seconds
+
+        # Jitter
         factor = 1.0 + random.uniform(-self._jitter, self._jitter)
-        secs = int(self._current_interval_seconds * factor)
-        self.update_interval = timedelta(seconds=max(5, secs))
+        secs = int(max(5, base * factor))  # keep the 5s floor
+
+        # Store + inform HA
+        self._current_interval_seconds = base
+        self.update_interval = timedelta(seconds=secs)
+
+
+
+    def _apply_backoff_interval(self, reason: str, retry_after: float | None = None) -> None:
+        """
+        Increase the polling interval after an error.
+
+        If the server provided a Retry-After (seconds), respect it; otherwise
+        use exponential backoff. Always apply jitter and enforce a sane floor.
+        """
+        # 1) Choose the next wait
+        if retry_after and retry_after > 0:
+            next_wait = max(self._current_interval_seconds, float(retry_after))
+            used = f"retry_after={retry_after:g}s"
+        else:
+            next_wait = min(self._current_interval_seconds * self._backoff_multiplier, self._max_backoff_seconds)
+            used = f"backoff*x{self._backoff_multiplier:g}"
+
+        # 2) Add jitter
+        factor = 1.0 + random.uniform(-self._jitter, self._jitter)
+        secs = int(max(5, next_wait * factor))  # keep your 5s floor
+
+        # 3) Store + inform HA
+        self._current_interval_seconds = next_wait
+        self.update_interval = timedelta(seconds=secs)
+
         _LOGGER.warning(
-            "Backoff due to %s; next update in ~%s seconds (cap %s).",
+            "Backoff due to %s (%s); next update in ~%s seconds (cap %s).",
             reason,
+            used,
             secs,
             self._max_backoff_seconds,
         )
@@ -196,7 +232,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         raise ConfigEntryAuthFailed("Home refresh failed and auto re-login unsuccessful")
 
 
-    # ----- main update -----
+
+
+
     async def _async_update_data(self) -> dict:
         tokens = await self.async_ensure_fresh_tokens()
         try:
@@ -205,28 +243,23 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             return data
 
         except MConnectAuthError as e:
-            # Always attempt auto-relogin with stored credentials + mailbox OAuth
             _LOGGER.info("Auth failed; attempting automatic re-login: %s", e)
-            if await self._try_auto_relogin_and_retry():  # still returns bool
-                # Fetch again with the NEW tokens, then return fresh data
+            if await self._try_auto_relogin_and_retry():
                 new_tokens = self.entry.data.get(CONF_MCONNECT_TOKENS) or {}
                 data = await self.client.async_fetch_all(new_tokens)
                 self._apply_success_interval()
                 return data
-
-            # If auto-relogin fails, trigger HA reauth UI
             _LOGGER.error("Automatic re-login failed; triggering reauth.")
             raise ConfigEntryAuthFailed("gmail_oauth") from e
 
-        except MConnectRateLimitError:
-            self._apply_backoff_interval("rate limiting (429)")
+        except MConnectRateLimitError as e:
+            # NEW: respect server-provided Retry-After when present
+            self._apply_backoff_interval("rate limiting (429)", retry_after=getattr(e, "retry_after", None))
             return self.data or {}
 
         except (MConnectServerError, MConnectCommError):
             self._apply_backoff_interval("server/communication error")
             return self.data or {}
-
-
 
 
 

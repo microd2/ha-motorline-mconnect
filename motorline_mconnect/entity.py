@@ -1,8 +1,8 @@
 # custom_components/motorline_mconnect/entity.py
 from __future__ import annotations
 
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import DeviceInfo # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
 
 from .const import DOMAIN
 
