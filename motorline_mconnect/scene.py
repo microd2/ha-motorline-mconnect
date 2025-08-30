@@ -89,7 +89,7 @@ async def async_setup_entry(
         seen.add(sid)
         deduped.append(s)
 
-    prefix = "MConnect: "
+    prefix = ""
     entities = [
         MConnectScene(coordinator, entry, {**s, "name": f"{prefix}{s.get('name', 'Scene')}"})
         for s in deduped

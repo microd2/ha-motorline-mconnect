@@ -17,7 +17,9 @@ class MConnectEntity(CoordinatorEntity):
         self._kind = kind
         self._obj = obj
         self._attr_unique_id = obj.id
-        self._attr_name = obj.name
+        self._attr_name = f"{obj.device.room_name} {obj.name}"
+        #self._attr_name = f"{obj.name}"
+        self._attr_has_entity_name = False
 
     @property
     def client(self):
