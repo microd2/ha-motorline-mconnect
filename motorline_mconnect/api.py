@@ -339,9 +339,9 @@ class MConnectClient:
         """
         Iterate top-level device dicts from a /rooms response.
         Supports:
-          - {"rooms":[{"devices":[...]}]}
-          - {"devices":[...]}
-          - flat list: [ ... ]
+        - {"rooms":[{"devices":[...]}]}
+        - {"devices":[...]}
+        - flat list: [ ... ]
         """
         # Flat list
         if isinstance(vendor_json, list):
@@ -352,8 +352,11 @@ class MConnectClient:
                         yield item
                     # room wrapper
                     if "devices" in item and isinstance(item["devices"], list):
+                        room_name = item.get("name")  # <-- may exist here
                         for d in item["devices"]:
                             if isinstance(d, dict):
+                                if room_name and "_room_name" not in d:
+                                    d["_room_name"] = room_name
                                 yield d
             return
 
@@ -364,151 +367,268 @@ class MConnectClient:
         rooms = vendor_json.get("rooms")
         if isinstance(rooms, list):
             for room in rooms:
+                room_name = (room or {}).get("name")   # <-- pull room name
                 for d in (room or {}).get("devices", []):
                     if isinstance(d, dict):
+                        if room_name and "_room_name" not in d:
+                            d["_room_name"] = room_name
                         yield d
 
-        for d in vendor_json.get("devices", []) or []:
+        for d in (vendor_json.get("devices", []) or []):
             if isinstance(d, dict):
                 yield d
 
     def _map_snapshot(self, vendor_json: dict) -> dict:
-        """
-        Convert /rooms JSON into HA-friendly lists, one entity per device.
+            """
+            Convert /rooms JSON into HA-friendly lists, one entity per device.
 
-        Mapping from your dumps:
-          - Switch/Light: 'status' "0"/"1"  -> off/on
-            (lights are SWITCH type but icon contains 'bulb'/'lamp'/'light' in some cases)
-          - Cover/Shutter: 'status' in {"0","1","2","3"} and/or values.types.OpenClose
-              * If an OpenClose value with min=0 & max=100 exists, use its 0..100 'value' as position.
-              * Else, use discrete status: "0"=closed, "2"=open; "1"/"3" moving (position unknown).
-        """
-        switches: list[SwitchDevice] = []
-        lights: list[LightDevice] = []
-        covers: list[CoverDevice] = []
+            Mapping from your dumps:
+            - Switch/Light: On/Off is values.types.OnOff with value_id like "switch_01"/"switch_02" and 0/1 values.
+            - Cover/Shutter: Open/Close is values.types.OpenClose with value_id "shutter" and 0..100.
+            """
 
-        for dev in self._iter_devices(vendor_json):
-            dev_id = str(dev.get("id") or dev.get("device_id") or dev.get("_id") or "")
-            if not dev_id:
-                continue
+            def _first_value_id(values: list[dict], want_type: str) -> str | None:
+                # Return first non-config, non-query value_id matching the given type
+                want = want_type.lower()
+                for v in values or []:
+                    if (v.get("type") or "").lower() == want:
+                        if v.get("configuration") or v.get("query_only"):
+                            continue
+                        vid = v.get("value_id")
+                        if vid:
+                            return str(vid)
+                return None
 
-            dev_name = dev.get("name") or f"Device {dev_id}"
-            dev_type = (
-                dev.get("type") or ""
-            ).lower()  # e.g. "devices.types.switch", "devices.types.shutter"
-            icon = (dev.get("icon") or "").lower()  # e.g. "bulb" for lights
-            status = dev.get("status")  # often int-like, but we normalize to str below
-            values = dev.get("values") or []
+            switches: list[SwitchDevice] = []
+            lights: list[LightDevice] = []
+            covers: list[CoverDevice] = []
 
-            meta = DeviceMeta(
-                id=dev_id,
-                name=dev_name,
-                manufacturer=(dev.get("product") or {}).get("manufacturer")
-                or "Motorline",
-                model=(dev.get("product") or {}).get("name") or "MConnect",
-            )
+            for dev in self._iter_devices(vendor_json):
+                # Prefer the logical device "_id" you command against (present in your dump)
+                dev_id = str(dev.get("_id") or dev.get("id") or dev.get("device_id") or "")
+                if not dev_id:
+                    continue
 
-            # --- classify device type ---
-            is_cover = (
-                "devices.types.shutter" in dev_type
-                or "shutter" in icon
-                or "blind" in icon
-            )
-            # Some lights arrive as SWITCH type but have a bulb/lamp icon
-            is_light = (
-                "devices.types.light" in dev_type
-                or "bulb" in icon
-                or "lamp" in icon
-                or "light" in icon
-            )
+                dev_name = dev.get("name") or f"Device {dev_id}"
+                dev_type = (dev.get("type") or "").lower()      # e.g. "devices.types.switch", "devices.types.shutter"
+                icon = (dev.get("icon") or "").lower()          # e.g. "bulb" for lights
+                status = dev.get("status")
+                values = dev.get("values") or []
 
-            if is_cover:
-                pos = resolve_cover_position(values)
-                st = None if status is None else str(status)
-                is_closed = None
+                meta = DeviceMeta(
+                    id=dev_id,
+                    name=dev_name,
+                    manufacturer=(dev.get("product") or {}).get("manufacturer") or "Motorline",
+                    model=(dev.get("product") or {}).get("name") or "MConnect",
+                    room_name=dev.get("_room_name"),
+                )
 
-                if pos is not None:
-                    is_closed = pos == 0
-                elif st is not None:
-                    if st == "0":  # closed
-                        is_closed, pos = True, 0
-                    elif st == "2":  # open
-                        is_closed, pos = False, 100
+                # --- classify device type ---
+                is_cover = ("devices.types.shutter" in dev_type) or ("shutter" in icon) or ("blind" in icon)
+                # Some lights arrive as SWITCH type but have a bulb/lamp icon
+                is_light = ("devices.types.light" in dev_type) or ("bulb" in icon) or ("lamp" in icon) or ("light" in icon)
 
-                covers.append(
-                    CoverDevice(
+                if is_cover:
+                    pos = resolve_cover_position(values)  # your existing helper
+                    st = None if status is None else str(status)
+                    is_closed = None
+                    if pos is not None:
+                        is_closed = pos == 0
+                    elif st is not None:
+                        if st == "0":      # closed
+                            is_closed, pos = True, 0
+                        elif st == "2":    # open
+                            is_closed, pos = False, 100
+
+                    # derive the command value_id for covers from the values list (e.g., "shutter")
+                    oc_id = _first_value_id(values, "values.types.openclose")
+
+                    cover = CoverDevice(
                         id=dev_id,
                         name=dev_name,
                         device=meta,
                         device_id=dev_id,
                         is_closed=is_closed,
-                        position=pos,  # None if unknown
+                        position=pos,                  # None if unknown
+                        command_value_id=oc_id,        # <-- used by async_command
                     )
-                )
-                continue
+                    covers.append(cover)
+                    continue
 
-            if is_light:
-                on, st = resolve_onoff(status)
-                lights.append(
-                    LightDevice(
+                if is_light:
+                    on, st = resolve_onoff(status)  # your existing helper
+                    # derive the command value_id for lights (e.g., "switch_01")
+                    onoff_id = _first_value_id(values, "values.types.onoff")
+
+                    light = LightDevice(
                         id=dev_id,
                         name=dev_name,
                         device=meta,
                         device_id=dev_id,
                         state=on,
                         status=st,
+                        command_value_id=onoff_id,     # <-- used by async_command
                     )
-                )
-                continue
+                    lights.append(light)
+                    continue
 
-            # Default to switch (plain on/off)
-            on, st = resolve_onoff(status)
-            switches.append(
-                SwitchDevice(
+                # Default to switch
+                on, st = resolve_onoff(status)
+                onoff_id = _first_value_id(values, "values.types.onoff")
+
+                switch = SwitchDevice(
                     id=dev_id,
                     name=dev_name,
                     device=meta,
                     device_id=dev_id,
                     state=on,
                     status=st,
+                    command_value_id=onoff_id,         # <-- used by async_command
                 )
-            )
+                switches.append(switch)
 
-        return {"switches": switches, "lights": lights, "covers": covers}
-
+            return {"switches": switches, "lights": lights, "covers": covers}
     # ---------- Commands ----------
-    async def async_command(
-        self, tokens: dict, device_id: str, action: str, **kw
-    ) -> None:
+    async def async_command(self, tokens: dict, device_id: str, action: str, **kw) -> None:
         """
         Send a command to a device.
-        action: "on", "off", "open", "close", "stop", "set_position"
-        kw: extra fields (e.g. position=30)
+
+        Supported actions:
+        - "on", "off"        → switches/lights (values.types.OnOff, e.g. "switch_01")
+        - "open", "close"    → covers/shutters (values.types.OpenClose, e.g. "shutter")
+        - "set_position"     → covers with position (0..100)
+        - "stop"             → send the same edge command again (see below)
+
+        kw:
+        - value_id: str      (entity passes this from .command_value_id)
+        - position: int      (0..100, required for set_position)
+        - direction: str     ("up" or "down", optional for stop; if absent we auto-detect)
         """
-        url = f"{BASE_URL}/devices/{device_id}/action"
+        url = f"{BASE_URL}/devices/value/{device_id}"
+        value_id = kw.get("value_id")
+        access = tokens.get("access")
+        if not access:
+            raise MConnectAuthError("Missing access token")
 
-        # This is just a skeleton — adjust to the real MConnect API body
-        if action in ("on", "off") or action in ("open", "close", "stop"):
-            body = {"action": action}
-        elif action == "set_position":
-            body = {"action": "set_position", "position": kw.get("position")}
-        else:
-            raise ValueError(f"Unknown action {action}")
+        # --- helpers (local) ---
+        async def _post_command(body: dict) -> None:
+            headers = {"Authorization": f"Bearer {access}"}
+            try:
+                async with self._session.post(url, json=body, headers=headers) as resp:
+                    if resp.status == 401:
+                        raise MConnectAuthError("Unauthorized")
+                    if resp.status != 200:
+                        raise MConnectCommError(f"Command {action} failed with {resp.status}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                raise MConnectCommError(f"Command {action} failed: {e}") from e
 
-        try:
-            async with self._session.post(
-                url, json=body, headers={"Authorization": f"Bearer {tokens['access']}"}
-            ) as resp:
-                if resp.status == 401:
-                    raise MConnectAuthError("Unauthorized")
-                if resp.status != 200:
-                    raise MConnectCommError(
-                        f"Command {action} failed with {resp.status}"
-                    )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            raise MConnectCommError(f"Command {action} failed: {e}") from e
+        async def _fetch_position() -> int | None:
+            """
+            Read current OpenClose 'value' (0..100) for this logical device
+            by scanning /rooms for this device_id and its OpenClose value_id.
+            """
+            rooms_url = f"{BASE_URL}/rooms"
+            headers = {
+                "Authorization": f"Bearer {access}",
+                "Accept": "application/json",
+            }
+            try:
+                async with self._session.get(rooms_url, headers=headers) as resp:
+                    if resp.status == 401:
+                        raise MConnectAuthError("Unauthorized")
+                    if resp.status != 200:
+                        txt = await resp.text()
+                        raise MConnectCommError(f"Read state failed: {resp.status} {txt}")
+                    data = await resp.json()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                raise MConnectCommError(f"Read state failed: {e}") from e
+
+            # locate this logical device and its OpenClose value
+            for room in data or []:
+                for dev in room.get("devices", []):
+                    dev_id_match = str(dev.get("_id") or dev.get("id") or dev.get("device_id") or "")
+                    if dev_id_match != device_id:
+                        continue
+                    for v in dev.get("values") or []:
+                        if (v.get("type") or "").lower() == "values.types.openclose":
+                            # value is 0..100 according to your dump
+                            return int(v.get("value")) if v.get("value") is not None else None
+            return None
+
+        # --- Switch/Light on/off ---
+        if action in ("on", "off"):
+            if not value_id:
+                raise MConnectCommError("Missing value_id for on/off")
+            body = {"value_id": value_id, "value": 1 if action == "on" else 0}
+            return await _post_command(body)
+
+        # --- Cover open/close ---
+        if action == "open":
+            if not value_id:
+                raise MConnectCommError("Missing value_id for open")
+            body = {"value_id": value_id, "value": 100}
+            return await _post_command(body)
+
+        if action == "close":
+            if not value_id:
+                raise MConnectCommError("Missing value_id for close")
+            body = {"value_id": value_id, "value": 0}
+            return await _post_command(body)
+
+        # --- Cover set position (0..100) ---
+        if action == "set_position":
+            if not value_id:
+                raise MConnectCommError("Missing value_id for set_position")
+            pos = kw.get("position")
+            if not isinstance(pos, int) or not (0 <= pos <= 100):
+                raise MConnectCommError("set_position requires integer 'position' 0..100")
+            body = {"value_id": value_id, "value": pos}
+            return await _post_command(body)
+
+        # --- Stop (repeat the edge command based on current movement direction) ---
+        if action == "stop":
+            if not value_id:
+                raise MConnectCommError("Missing value_id for stop")
+
+            # 1) If caller tells direction, trust it
+            direction = kw.get("direction")
+            if direction in ("up", "down"):
+                edge_value = 100 if direction == "up" else 0
+                body = {"value_id": value_id, "value": edge_value}
+                return await _post_command(body)
+
+            # 2) Otherwise auto-detect: sample position twice and compare
+            p1 = await _fetch_position()
+            if p1 is None:
+                raise MConnectCommError("stop: unable to read current position (p1)")
+
+            # short delay to let position advance a bit; tune as needed
+            await asyncio.sleep(0.6)
+
+            p2 = await _fetch_position()
+            if p2 is None:
+                raise MConnectCommError("stop: unable to read current position (p2)")
+
+            if p2 > p1:
+                # moving up → repeat open
+                body = {"value_id": value_id, "value": 100}
+                return await _post_command(body)
+            elif p2 < p1:
+                # moving down → repeat close
+                body = {"value_id": value_id, "value": 0}
+                return await _post_command(body)
+            else:
+                # no movement detected between samples
+                raise MConnectCommError(
+                    "stop: direction not detectable (position unchanged); "
+                    "pass kw['direction']='up' or 'down'"
+                )
+
+        raise ValueError(f"Unknown action {action}")
 
 
     async def async_get_homes(self, access_token: str) -> list[dict]:
@@ -731,7 +851,7 @@ class MConnectClient:
 
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access}"
-        url = f"{BASE_URL}/scenes/{scene_id}/activate"
+        url = f"{BASE_URL}/scenes/{scene_id}"
 
         self._log_api_call("POST", url, headers=headers)
         async with self._session.post(url, headers=headers, timeout=ClientTimeout(total=15)) as resp:
@@ -804,3 +924,13 @@ def resolve_cover_position(values) -> int | None:
                 continue
     return None
 
+def _first_value_id(values: list[dict], want_type: str) -> str | None:
+    for v in values or []:
+        if (v.get("type") or "").lower() == want_type.lower():
+            # Skip config/query-only entries
+            if v.get("configuration") or v.get("query_only"):
+                continue
+            vid = v.get("value_id")
+            if vid:
+                return str(vid)
+    return None

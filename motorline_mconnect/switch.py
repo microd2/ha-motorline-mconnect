@@ -22,16 +22,18 @@ class MConnectSwitch(MConnectEntity, SwitchEntity):
         return self._obj.state
 
     async def async_turn_on(self, **kwargs):
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "on"
+            self.client.async_command, self._obj.device_id, "on", value_id=vid
         )
         self._obj.state = True  # optimistic
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs):
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "off"
+            self.client.async_command, self._obj.device_id, "off", value_id=vid
         )
         self._obj.state = False
         self.async_write_ha_state()

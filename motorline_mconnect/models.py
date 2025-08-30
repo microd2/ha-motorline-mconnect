@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 from typing import Literal
 
 
@@ -11,6 +12,7 @@ class DeviceMeta:
     name: str
     manufacturer: str = "Motorline"
     model: str = "MConnect"
+    room_name: Optional[str] = None   # <-- add this
 
 
 @dataclass(slots=True)
@@ -25,12 +27,14 @@ class BaseDeviceEntity:
 class SwitchDevice(BaseDeviceEntity):
     state: bool
     status: Literal["0", "1"]  # vendor binary as string
+    command_value_id: str | None = None
 
 
 @dataclass(slots=True)
 class LightDevice(BaseDeviceEntity):
     state: bool
     status: Literal["0", "1"]
+    command_value_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -38,3 +42,4 @@ class CoverDevice(BaseDeviceEntity):
     is_closed: bool | None = None
     # No percentage in your dump, so position is None
     position: int | None = None
+    command_value_id: str | None = None

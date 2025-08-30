@@ -58,8 +58,9 @@ class MConnectCover(MConnectEntity, CoverEntity):
 
     # ---------- Commands ----------
     async def async_open_cover(self, **kwargs: Any) -> None:
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "open"
+            self.client.async_command, self._obj.device_id, "open", value_id=vid
         )
         # optimistic local state
         if getattr(self._obj, "supports_position", False):
@@ -72,8 +73,9 @@ class MConnectCover(MConnectEntity, CoverEntity):
         _schedule_poke_refresh(self.hass, self.coordinator)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "close"
+            self.client.async_command, self._obj.device_id, "close", value_id=vid
         )
         if getattr(self._obj, "supports_position", False):
             self._obj.position = 0
@@ -84,8 +86,9 @@ class MConnectCover(MConnectEntity, CoverEntity):
         _schedule_poke_refresh(self.hass, self.coordinator)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "stop"
+            self.client.async_command, self._obj.device_id, "stop", value_id=vid
         )
         # no position change assumed; just refresh to collapse drift
         self.coordinator.note_recent_activity()
@@ -97,8 +100,9 @@ class MConnectCover(MConnectEntity, CoverEntity):
             return  # or: raise ValueError("Missing required ATTR_POSITION")
         pos = int(pos_raw)
 
+        vid = getattr(self._obj, "command_value_id", None)
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "set_position", position=pos
+            self.client.async_command, self._obj.device_id, "set_position", position=pos, value_id=vid
         )
         # optimistic local state update
         self._obj.position = pos

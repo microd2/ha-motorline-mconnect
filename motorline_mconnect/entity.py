@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from homeassistant.helpers.entity import DeviceInfo # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
+from typing import Optional
 
 from .const import DOMAIN
 
@@ -22,15 +23,20 @@ class MConnectEntity(CoordinatorEntity):
     def client(self):
         return self.coordinator.client
 
+
+
     @property
     def device_info(self) -> DeviceInfo:
         meta = self._obj.device
+
         return DeviceInfo(
             identifiers={(DOMAIN, meta.id)},
             manufacturer=meta.manufacturer,
             model=meta.model,
             name=meta.name,
+            suggested_area=meta.room_name                  # <-- suggested area
         )
+
 
     def _handle_coordinator_update(self) -> None:
         for item in self.coordinator.data.get(self._kind, []):
