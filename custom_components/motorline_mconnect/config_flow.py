@@ -41,8 +41,8 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
     @property
     def scopes(self) -> list[str]:
         """OAuth scopes required for Gmail access."""
-        self.logger.warning("OAuth scopes property called. scopes=%s", GMAIL_SCOPES)
-        _LOGGER.warning("OAuth scopes requested: %s", GMAIL_SCOPES)
+        self.logger.debug("OAuth scopes property called. scopes=%s", GMAIL_SCOPES)
+        _LOGGER.debug("OAuth scopes requested: %s", GMAIL_SCOPES)
         return GMAIL_SCOPES
 
     # 👇 NEW: Google-specific authorize params
@@ -50,7 +50,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
     def extra_authorize_data(self) -> dict[str, Any]:
         # Ensure scope is included in the authorize URL
         scope = " ".join(GMAIL_SCOPES)
-        self.logger.warning("extra_authorize_data: adding scope=%s", scope)
+        self.logger.debug("extra_authorize_data: adding scope=%s", scope)
         return {
             "access_type": "offline",
             "prompt": "consent",
@@ -72,7 +72,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
         self._oauth_impl: str | None = None
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self.logger.warning(
+        self.logger.debug(
             "async_step_user: domain=%r, handler_class_domain=%r",
             getattr(self, "domain", None),
             getattr(self.__class__, "domain", None),
@@ -132,8 +132,8 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             # Log the exact authorize URL HA is about to open.
             url = result.get("url")
             if url:
-                self.logger.warning("AUTH URL = %s", url)
-                self.logger.warning(
+                self.logger.debug("AUTH URL = %s", url)
+                self.logger.debug(
                     "AUTH URL QUERY = %s", parse_qs(urlparse(url).query)
                 )
             else:

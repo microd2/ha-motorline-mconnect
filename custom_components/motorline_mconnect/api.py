@@ -860,7 +860,7 @@ class MConnectClient:
         Refresh the home-scoped access token.
         """
         headers = _build_headers(self._user_agent, self._timezone)
-        payload = {"home_id": home_id, "refresh_token": refresh_token}
+        payload = {"grant_type": "refresh_token", "refresh_token": refresh_token}
         async with self._session.post(
             HOMES_TOKEN_URL,
             json=payload,
