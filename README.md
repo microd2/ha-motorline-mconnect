@@ -53,36 +53,54 @@ Create a new Gmail account for your HA MCONNECT user.  e.g. WilsonFamilyMConnect
 ### 4. Grant permissions to check for the MFA email
 1.	Log in to [Google Cloud Console](https://console.cloud.google.com) with the MConnect account you want to use for this integration.    
 2.	Go to Select a Project
-	a. New Project
-b. Project Name = Home Assistant
-c. Create
+	- New Project
+
+		![Screenshot](readme_images/newproject.png)
+
+	- Project Name = Home Assistant
+	- Create
 You will arrive at the welcome screen for your new project
 5.	Select APIs and Services
-a.	Library > Gmail API
-b.	Enable
+
+	![Screenshot](readme_images/api.png)
+
+-	Library > Gmail API
+
+	![Screenshot](readme_images/gmailapi.png)
+
+-	Enable
 8.	Go to Credentials in the left menu
-a.	Create credentials > OAuth Client Id
-b.	If prompted, Configure consent screen
-c.	Complete the steps
+
+	![Screenshot](readme_images/credentials.png)
+
+-	Create credentials > OAuth Client Id
+-	If prompted, Configure consent screen
+-	Complete the steps
 12.	Go to Clients in the left menu and select Web Application
-a.	Fill in the name and click Create
-b.	Click Add URI
-c.	Enter https://my.home-assistant.io/redirect/oauth
+-	Fill in the name and click Create
+-	Click Add URI
+-	Enter https://my.home-assistant.io/redirect/oauth
 This is just a call-back url redirector that allows Gmail to point back to your HA installation – you don’t need to sign up  to anything
-d. Press Ok
+- Press Ok
 16.	COPY your client id and client secret to notepad – you will need these later.
 17.	Go to Audience
-a.	Click Publish
-b.	Ignore the warning that your app requires verification. It doesn’t.
+
+	![Screenshot](readme_images/audience.png)
+
+-	Click Publish
+-	Ignore the warning that your app requires verification. It doesn’t.
 18. Go to Data access in the left menu
-a. Click Add or remove scopes
-b. Look through the pages of scopes and select Gmail API    …/auth/gmail.readonly
-c. Click Update
-d. Click Save
+- Click Add or remove scopes
+- Look through the pages of scopes and select Gmail API    **…/auth/gmail.readonly**
+- Click Update
+- Click Save
 
 ### 5. Create the Home Assistant credentials
 1.	In Home Assistant go to Settings > Devices & Services
 2.	In the 3 dot menu at the top select Application Credentials
+
+	![Screenshot](readme_images/addoauth.png)
+
 3.	Click Add application credential
 **Integration:**  Motorline MConnect
 **Name:** MConnect MFA
@@ -95,17 +113,26 @@ d. Click Save
 3.	Enter the email address and password that you added to the MCONNECT app in Step 3
 4.	Confirm that you have already created the Home Assistant credentials (that you completed in Step 5)
 5.	A browser window will open with a warning that Google hasn’t verified the app we created in Step 4. Which is true, but we don’t care.
-a. Click Advanced
-b. Click Go to home-assistant.io (unsafe)
-c.	Click Continue
+
+	![Screenshot](readme_images/googlewarning.png)
+
+- Click Advanced
+- Click Go to home-assistant.io (unsafe)
+-	Click Continue
 6.	Follow my.home-assistant.io steps to redirect your Gmail login to your local HA instance.
-a.	Find the URL that your HA instance is listening on.
-i.	Open a new browser tab and log in to your Home Assistant 
-ii.	Go to Settings → System → Network → Home Assistant URL
-iii.	Click Copy
-b.	Go back to the my.home-assistant.io tab and paste URL that you just copied
-c. Click Ok
-d.	Click Link Account 
+-	Find the URL that your HA instance is listening on.
+- i.	Open a new browser tab and log in to your Home Assistant 
+- ii.	Go to Settings → System → Network → Home Assistant URL
+
+	![Screenshot](readme_images/assistanturl.png)
+
+- iii.	Click Copy Link under **Local Network**
+-	Go back to the my.home-assistant.io tab and paste URL that you just copied
+
+	![Screenshot](readme_images/mha2.png)
+
+- Click Ok
+-	Click Link Account 
 
 Your new Motorline MCONNECT integration should be ready to use!
 

@@ -16,3 +16,4 @@ venv/
 # Home Assistant configuration
 config/*
 !config/configuration.yaml
+readme_images/Thumbs.db
