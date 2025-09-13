@@ -10,7 +10,6 @@ import base64
 import re
 import time
 from datetime import UTC, datetime
-from typing import Callable
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 

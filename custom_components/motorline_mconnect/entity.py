@@ -3,9 +3,6 @@ from __future__ import annotations
 
 from homeassistant.helpers.entity import DeviceInfo # type: ignore
 from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
-from .models import CoverDevice, DeviceMeta, LightDevice, SwitchDevice
-from typing import Optional
-
 from .const import DOMAIN
 
 

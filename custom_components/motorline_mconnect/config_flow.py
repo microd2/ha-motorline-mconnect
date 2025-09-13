@@ -1,7 +1,7 @@
 # UI flow: username/password -> OAuth (Gmail) -> auto-read OTP -> create entry
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any
 from urllib.parse import urlparse, parse_qs
 import logging
 import voluptuous as vol
@@ -14,7 +14,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession # type:
 from homeassistant.helpers import config_entry_oauth2_flow as oauth2 # type: ignore
 from .const import (
     DOMAIN, CONF_EMAIL_PROVIDER, CONF_EMAIL_OAUTH, CONF_MCONNECT_TOKENS,
-    AUTH_DOMAIN_GMAIL, GMAIL_SCOPES,
+    GMAIL_SCOPES,
 )
 from .api import (
     MConnectClient, MConnectAuthError, MConnectCommError,

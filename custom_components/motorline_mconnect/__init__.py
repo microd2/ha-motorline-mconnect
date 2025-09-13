@@ -2,25 +2,16 @@ from __future__ import annotations
 
 import logging
 
-_LOGGER = logging.getLogger(__name__)
-
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.const import Platform # type: ignore
 from homeassistant.core import HomeAssistant # type: ignore
 from homeassistant.loader import async_get_integration # type: ignore
 from homeassistant.util import dt as dt_util # type: ignore
 
+from .const import DOMAIN
+from .coordinator import MConnectCoordinator
 
-try:
-    from .const import AUTH_DOMAIN_GMAIL, DOMAIN
-except Exception as e:
-    _LOGGER.error("__init__: Error importing constants: %s", e, exc_info=True)
-    raise
-
-try:
-    from .coordinator import MConnectCoordinator
-except Exception as e:
-    raise
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE]
 

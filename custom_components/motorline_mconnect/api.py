@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from typing import Literal
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -60,28 +59,28 @@ class MConnectClient:
 
     def _log_api_call(self, method: str, url: str, payload: dict | None = None, headers: dict | None = None, response_status: int | None = None, response_text: str | None = None) -> None:
         return
-        """Log API calls to MConnect endpoints."""
-        # Mask sensitive data
-        safe_payload = payload.copy() if payload else {}
-        if "password" in safe_payload:
-            safe_payload["password"] = "***MASKED***"
-        if "client_secret" in safe_payload:
-            safe_payload["client_secret"] = "***MASKED***"
+        # """Log API calls to MConnect endpoints."""
+        # # Mask sensitive data
+        # safe_payload = payload.copy() if payload else {}
+        # if "password" in safe_payload:
+        #     safe_payload["password"] = "***MASKED***"
+        # if "client_secret" in safe_payload:
+        #     safe_payload["client_secret"] = "***MASKED***"
 
-        safe_headers = headers.copy() if headers else {}
-        if "Authorization" in safe_headers:
-            safe_headers["Authorization"] = f"Bearer ***MASKED***"
+        # safe_headers = headers.copy() if headers else {}
+        # if "Authorization" in safe_headers:
+        #     safe_headers["Authorization"] = "Bearer ***MASKED***"
 
-        LOGGER.info(f"MConnect API Call: {method} {url}")
-        LOGGER.info(f"  Request Headers: {json.dumps(safe_headers, indent=2)}")
-        LOGGER.info(f"  Request Payload: {json.dumps(safe_payload, indent=2)}")
+        # LOGGER.info(f"MConnect API Call: {method} {url}")
+        # LOGGER.info(f"  Request Headers: {json.dumps(safe_headers, indent=2)}")
+        # LOGGER.info(f"  Request Payload: {json.dumps(safe_payload, indent=2)}")
 
-        if response_status is not None:
-            LOGGER.info(f"  Response Status: {response_status}")
-        if response_text is not None:
-            # Truncate very long responses
-            truncated_response = response_text[:1000] + "..." if len(response_text) > 1000 else response_text
-            LOGGER.info(f"  Response Body: {truncated_response}")
+        # if response_status is not None:
+        #     LOGGER.info(f"  Response Status: {response_status}")
+        # if response_text is not None:
+        #     # Truncate very long responses
+        #     truncated_response = response_text[:1000] + "..." if len(response_text) > 1000 else response_text
+        #     LOGGER.info(f"  Response Body: {truncated_response}")
 
     async def async_begin_login(self, username: str, password: str) -> dict:
         """
@@ -195,9 +194,9 @@ class MConnectClient:
                     # TOO MANY DEVICES
                      response_text = await resp.text()
                      if "MaxTrustedDevicesError" in response_text:
-                        LOGGER.info(f"Max devices reached")
+                        LOGGER.info("Max devices reached")
                         await self.async_endAllSessions(self._user_access_token)
-                        LOGGER.info(f" Waiting for end all code")
+                        LOGGER.info(" Waiting for end all code")
                         endAllMFACode = await _poll_for_code("end_all")
                         await self.async_endAllSessionsConfirm(self._user_access_token,endAllMFACode)
                         return await self.async_logIntoHome(self._user_access_token, self._user_refresh_token)
@@ -219,7 +218,7 @@ class MConnectClient:
         return {"account_id": "mconnect-account"}
 
     async def async_logIntoHome(self, userLoginBearerToken : str, userLoginRefreshToken : str ) -> dict:
-        LOGGER.info(f" Logging in to home")
+        LOGGER.info(" Logging in to home")
 
         homes = await self.async_get_homes(userLoginBearerToken)
         guesthomes = await self.async_get_guesthomes(userLoginBearerToken)
@@ -240,7 +239,7 @@ class MConnectClient:
         home_tokens["home_id"] = home_id
         home_tokens["user_refresh"] = userLoginRefreshToken
 
-        LOGGER.info(f" Logged in to Home")
+        LOGGER.info(" Logged in to Home")
         return home_tokens
 
 

@@ -51,7 +51,7 @@ class MConnectScene(Scene):
     @property
     def available(self) -> bool:
         # Tie availability to your coordinator/data source
-        return not self.coordinator.last_update_success is False
+        return  self.coordinator.last_update_success is not False
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Trigger the vendor scene via API."""

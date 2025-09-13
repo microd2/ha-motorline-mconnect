@@ -1,14 +1,11 @@
 # custom_components/motorline_mconnect/cover.py
 
 from __future__ import annotations
-
-from typing import Any
 import asyncio
 
 from homeassistant.components.cover import (  # type: ignore
     CoverEntity,
     CoverEntityFeature,
-    ATTR_POSITION,
 )
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
