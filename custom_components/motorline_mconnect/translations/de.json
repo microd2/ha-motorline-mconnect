@@ -23,7 +23,7 @@
       },
       "oauth_setup": {
         "title": "Einrichtung der OAuth2‑Anwendung erforderlich",
-        "description": "Sie müssen OAuth2‑Anmeldedaten einrichten:\n\n1. Gehen Sie zu Einstellungen → Geräte & Dienste → ⋮ → Anmeldedaten für Anwendungen\n2. Klicken Sie auf „Anmeldedaten für Anwendung hinzufügen“\n3. Wählen Sie „{provider}“ als Anwendung\n4. Geben Sie die Details Ihrer OAuth2‑App ein (Client‑ID, Client‑Secret)\n5. Verwenden Sie die Autorisierungsdomäne: `{auth_domain}`\n\nNachdem Sie die Einrichtung abgeschlossen haben, aktivieren Sie das Kontrollkästchen unten, um fortzufahren.",
+        "description": "Sie müssen OAuth2‑Anmeldedaten einrichten:\n\n1. Gehen Sie zu Einstellungen → Geräte & Dienste → ⋮ → Anmeldedaten für Anwendungen\n2. Klicken Sie auf „Anmeldedaten für Anwendung hinzufügen“\n3. Wählen Sie Motorline MConnect als Anwendung\n4. Geben Sie die Details Ihrer OAuth2‑App ein (Client‑ID, Client‑Secret)\n5. Verwenden Sie die Autorisierungsdomäne: `{auth_domain}`\n\nNachdem Sie die Einrichtung abgeschlossen haben, aktivieren Sie das Kontrollkästchen unten, um fortzufahren.",
         "data": {
           "setup_complete": "Ich habe die OAuth2‑Anmeldedaten eingerichtet"
         }

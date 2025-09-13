@@ -23,7 +23,7 @@
       },
       "oauth_setup": {
         "title": "Configuration de l’application OAuth2 requise",
-        "description": "Vous devez configurer les identifiants OAuth2 de l’application :\n\n1. Allez dans Paramètres → Appareils et services → ⋮ → Identifiants d’application\n2. Cliquez sur « Ajouter un identifiant d’application »\n3. Sélectionnez « {provider} » comme application\n4. Saisissez les informations de votre application OAuth2 (ID client, secret client)\n5. Utilisez le domaine d’autorisation : `{auth_domain}`\n\nUne fois la configuration terminée, cochez la case ci‑dessous pour continuer.",
+        "description": "Vous devez configurer les identifiants OAuth2 de l’application :\n\n1. Allez dans Paramètres → Appareils et services → ⋮ → Identifiants d’application\n2. Cliquez sur « Ajouter un identifiant d’application »\n3. Sélectionnez Motorline MConnect comme application\n4. Saisissez les informations de votre application OAuth2 (ID client, secret client)\n5. Utilisez le domaine d’autorisation : `{auth_domain}`\n\nUne fois la configuration terminée, cochez la case ci‑dessous pour continuer.",
         "data": {
           "setup_complete": "J’ai configuré les identifiants de l’application OAuth2"
         }

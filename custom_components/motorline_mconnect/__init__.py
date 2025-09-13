@@ -24,14 +24,6 @@ except Exception as e:
 
 PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE]
 
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Motorline MConnect integration."""
-    # This function should only run when the integration is actually configured
-    # For now, just return True as we're using config_flow for setup
-    return True
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Build UA from the manifest version (HACS requires this field in manifest.json)
     integration = await async_get_integration(hass, DOMAIN)  # gets manifest + version

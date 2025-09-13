@@ -23,7 +23,7 @@
       },
       "oauth_setup": {
         "title": "Se requiere la configuración de la aplicación OAuth2",
-        "description": "Debe configurar las credenciales de la aplicación OAuth2:\n\n1. Vaya a Configuración → Dispositivos y servicios → ⋮ → Credenciales de aplicación\n2. Haga clic en «Añadir credencial de aplicación»\n3. Seleccione «{provider}» como aplicación\n4. Introduzca los datos de su aplicación OAuth2 (ID de cliente, secreto de cliente)\n5. Utilice el dominio de autorización: `{auth_domain}`\n\nUna vez completada la configuración, marque la casilla a continuación para continuar.",
+        "description": "Debe configurar las credenciales de la aplicación OAuth2:\n\n1. Vaya a Configuración → Dispositivos y servicios → ⋮ → Credenciales de aplicación\n2. Haga clic en «Añadir credencial de aplicación»\n3. Seleccione Motorline MConnect como aplicación\n4. Introduzca los datos de su aplicación OAuth2 (ID de cliente, secreto de cliente)\n5. Utilice el dominio de autorización: `{auth_domain}`\n\nUna vez completada la configuración, marque la casilla a continuación para continuar.",
         "data": {
           "setup_complete": "He configurado las credenciales de la aplicación OAuth2"
         }
