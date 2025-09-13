@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Literal
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -15,6 +14,7 @@ from .mfa import wait_for_mfa_code, MailboxAuthError  # <-- import the new error
 
 Status = Literal["0", "1"]
 
+
 # ----- Exceptions used by coordinator/backoff -----
 class MConnectError(Exception):
     pass
@@ -22,6 +22,7 @@ class MConnectError(Exception):
 
 class MConnectAuthError(MConnectError):
     pass
+
 
 class MConnectRateLimitError(MConnectError):
     def __init__(self, *args, retry_after: float | None = None):
@@ -47,7 +48,6 @@ REMOVE_THIS_DEVICE_URL = f"{BASE_URL}/user/trusted_device"
 HOMES_TOKEN_URL = f"{BASE_URL}/homes/auth/token"
 
 
-
 class MConnectClient:
     # def __init__(self, session: ClientSession) -> None:
     #     self._session = session
@@ -57,7 +57,15 @@ class MConnectClient:
         self._user_agent = user_agent
         self._timezone = timezone
 
-    def _log_api_call(self, method: str, url: str, payload: dict | None = None, headers: dict | None = None, response_status: int | None = None, response_text: str | None = None) -> None:
+    def _log_api_call(
+        self,
+        method: str,
+        url: str,
+        payload: dict | None = None,
+        headers: dict | None = None,
+        response_status: int | None = None,
+        response_text: str | None = None,
+    ) -> None:
         return
         # """Log API calls to MConnect endpoints."""
         # # Mask sensitive data
@@ -108,7 +116,9 @@ class MConnectClient:
                 url, json=payload, headers=headers, timeout=ClientTimeout(total=15)
             ) as resp:
                 text = await resp.text()
-                self._log_api_call("POST", url, response_status=resp.status, response_text=text)
+                self._log_api_call(
+                    "POST", url, response_status=resp.status, response_text=text
+                )
 
                 if resp.status == 401:
                     raise MConnectAuthError("Invalid credentials")
@@ -117,7 +127,9 @@ class MConnectClient:
                 if 500 <= resp.status < 600:
                     raise MConnectServerError(f"Server error during login: {text}")
                 if resp.status != 200:
-                    raise MConnectCommError(f"Unexpected login status {resp.status}: {text}")
+                    raise MConnectCommError(
+                        f"Unexpected login status {resp.status}: {text}"
+                    )
 
                 data = await resp.json()
 
@@ -130,7 +142,6 @@ class MConnectClient:
             raise MConnectCommError("Login timeout") from e
         except ClientError as e:
             raise MConnectCommError(f"Login connection error: {e}") from e
-
 
     async def async_complete_login_with_mailbox(
         self, provider: str, oauth_tokens: dict
@@ -155,7 +166,7 @@ class MConnectClient:
                     provider=provider,
                     oauth_tokens=oauth_tokens,
                     code_type=kind,
-                    timeout=300  # 5 minutes
+                    timeout=300,  # 5 minutes
                 )
             except asyncio.TimeoutError as e:
                 raise MConnectAuthError(str(e)) from e
@@ -177,29 +188,34 @@ class MConnectClient:
                 timeout=ClientTimeout(total=15),
             ) as resp:
                 text = await resp.text()
-                self._log_api_call("POST", VERIFY_URL, response_status=resp.status, response_text=text)
+                self._log_api_call(
+                    "POST", VERIFY_URL, response_status=resp.status, response_text=text
+                )
 
                 if resp.status == 200:
-
                     data = await resp.json()
                     user_access = data.get("access_token") or self._user_access_token
                     user_refresh = data.get("refresh_token") or self._user_refresh_token
 
-                    return await self.async_logIntoHome(user_access,user_refresh)
+                    return await self.async_logIntoHome(user_access, user_refresh)
 
                 if resp.status == 401:
                     raise MConnectAuthError("MFA rejected")
 
                 if resp.status == 403:
                     # TOO MANY DEVICES
-                     response_text = await resp.text()
-                     if "MaxTrustedDevicesError" in response_text:
+                    response_text = await resp.text()
+                    if "MaxTrustedDevicesError" in response_text:
                         LOGGER.info("Max devices reached")
                         await self.async_endAllSessions(self._user_access_token)
                         LOGGER.info(" Waiting for end all code")
                         endAllMFACode = await _poll_for_code("end_all")
-                        await self.async_endAllSessionsConfirm(self._user_access_token,endAllMFACode)
-                        return await self.async_logIntoHome(self._user_access_token, self._user_refresh_token)
+                        await self.async_endAllSessionsConfirm(
+                            self._user_access_token, endAllMFACode
+                        )
+                        return await self.async_logIntoHome(
+                            self._user_access_token, self._user_refresh_token
+                        )
 
                 if resp.status == 429:
                     raise MConnectRateLimitError("Rate limited during MFA")
@@ -217,7 +233,9 @@ class MConnectClient:
         # If not, you can return {'account_id': username} from config_flow instead.
         return {"account_id": "mconnect-account"}
 
-    async def async_logIntoHome(self, userLoginBearerToken : str, userLoginRefreshToken : str ) -> dict:
+    async def async_logIntoHome(
+        self, userLoginBearerToken: str, userLoginRefreshToken: str
+    ) -> dict:
         LOGGER.info(" Logging in to home")
 
         homes = await self.async_get_homes(userLoginBearerToken)
@@ -241,7 +259,6 @@ class MConnectClient:
 
         LOGGER.info(" Logged in to Home")
         return home_tokens
-
 
     async def async_full_login_via_mailbox(
         self, username: str, password: str, provider: str, email_oauth: dict
@@ -298,11 +315,15 @@ class MConnectClient:
         self._log_api_call("GET", url, headers=headers)
 
         try:
-            async with self._session.get(url, headers=headers, timeout=ClientTimeout(total=20)) as resp:
+            async with self._session.get(
+                url, headers=headers, timeout=ClientTimeout(total=20)
+            ) as resp:
                 response_text = await resp.text()
 
                 # Log devices fetch response
-                self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
+                self._log_api_call(
+                    "GET", url, response_status=resp.status, response_text=response_text
+                )
 
                 if resp.status == 401:
                     raise MConnectAuthError("Access token expired/invalid")
@@ -314,7 +335,9 @@ class MConnectClient:
                             retry_after = int(ra)
                         except ValueError:
                             retry_after = None
-                    raise MConnectRateLimitError("rate limited", retry_after=retry_after)
+                    raise MConnectRateLimitError(
+                        "rate limited", retry_after=retry_after
+                    )
                 if 500 <= resp.status < 600:
                     raise MConnectServerError("Server error during fetch")
                 if resp.status != 200:
@@ -369,131 +392,154 @@ class MConnectClient:
         rooms = vendor_json.get("rooms")
         if isinstance(rooms, list):
             for room in rooms:
-                room_name = (room or {}).get("name")   # <-- pull room name
+                room_name = (room or {}).get("name")  # <-- pull room name
                 for d in (room or {}).get("devices", []):
                     if isinstance(d, dict):
                         if room_name and "_room_name" not in d:
                             d["_room_name"] = room_name
                         yield d
 
-        for d in (vendor_json.get("devices", []) or []):
+        for d in vendor_json.get("devices", []) or []:
             if isinstance(d, dict):
                 yield d
 
     def _map_snapshot(self, vendor_json: dict) -> dict:
-            """
-            Convert /rooms JSON into HA-friendly lists, one entity per device.
+        """
+        Convert /rooms JSON into HA-friendly lists, one entity per device.
 
-            Mapping from your dumps:
-            - Switch/Light: On/Off is values.types.OnOff with value_id like "switch_01"/"switch_02" and 0/1 values.
-            - Cover/Shutter: Open/Close is values.types.OpenClose with value_id "shutter" and 0..100.
-            """
+        Mapping from your dumps:
+        - Switch/Light: On/Off is values.types.OnOff with value_id like "switch_01"/"switch_02" and 0/1 values.
+        - Cover/Shutter: Open/Close is values.types.OpenClose with value_id "shutter" and 0..100.
+        """
 
-            def _first_value_id(values: list[dict], want_type: str) -> str | None:
-                # Return first non-config, non-query value_id matching the given type
-                want = want_type.lower()
-                for v in values or []:
-                    if (v.get("type") or "").lower() == want:
-                        if v.get("configuration") or v.get("query_only"):
-                            continue
-                        vid = v.get("value_id")
-                        if vid:
-                            return str(vid)
-                return None
+        def _first_value_id(values: list[dict], want_type: str) -> str | None:
+            # Return first non-config, non-query value_id matching the given type
+            want = want_type.lower()
+            for v in values or []:
+                if (v.get("type") or "").lower() == want:
+                    if v.get("configuration") or v.get("query_only"):
+                        continue
+                    vid = v.get("value_id")
+                    if vid:
+                        return str(vid)
+            return None
 
-            switches: list[SwitchDevice] = []
-            lights: list[LightDevice] = []
-            covers: list[CoverDevice] = []
+        switches: list[SwitchDevice] = []
+        lights: list[LightDevice] = []
+        covers: list[CoverDevice] = []
 
-            for dev in self._iter_devices(vendor_json):
-                # Prefer the logical device "_id" you command against (present in your dump)
-                dev_id = str(dev.get("_id") or dev.get("id") or dev.get("device_id") or "")
-                if not dev_id:
-                    continue
+        for dev in self._iter_devices(vendor_json):
+            # Prefer the logical device "_id" you command against (present in your dump)
+            dev_id = str(dev.get("_id") or dev.get("id") or dev.get("device_id") or "")
+            if not dev_id:
+                continue
 
-                dev_name = dev.get("name") or f"Device {dev_id}"
-                dev_type = (dev.get("type") or "").lower()      # e.g. "devices.types.switch", "devices.types.shutter"
-                icon = (dev.get("icon") or "").lower()          # e.g. "bulb" for lights
-                status = dev.get("status")
-                values = dev.get("values") or []
+            dev_name = dev.get("name") or f"Device {dev_id}"
+            dev_type = (
+                dev.get("type") or ""
+            ).lower()  # e.g. "devices.types.switch", "devices.types.shutter"
+            icon = (dev.get("icon") or "").lower()  # e.g. "bulb" for lights
+            status = dev.get("status")
+            values = dev.get("values") or []
 
-                meta = DeviceMeta(
+            meta = DeviceMeta(
+                id=dev_id,
+                name=dev_name,
+                manufacturer=(dev.get("product") or {}).get("manufacturer")
+                or "Motorline",
+                model=(dev.get("product") or {}).get("name") or "MConnect",
+                room_name=dev.get("_room_name"),
+            )
+
+            # --- classify device type ---
+            is_cover = (
+                ("devices.types.shutter" in dev_type)
+                or ("shutter" in icon)
+                or ("blind" in icon)
+            )
+            # Some lights arrive as SWITCH type but have a bulb/lamp icon
+            is_light = (
+                ("devices.types.light" in dev_type)
+                or ("bulb" in icon)
+                or ("lamp" in icon)
+                or ("light" in icon)
+            )
+
+            if is_cover:
+                # derive the command value_id for covers from the values list (e.g., "shutter")
+                oc_id = _first_value_id(values, "values.types.openclose")
+                tt = _get_travel_time(values)
+
+                pos = resolve_cover_position(values)  # your existing helper
+                st = None if status is None else str(status)
+                is_closed = None
+                if pos is not None:
+                    is_closed = pos == 0
+                elif st is not None:
+                    if st == "0":  # closed
+                        is_closed, pos = True, 0
+                    elif st == "2":  # open
+                        is_closed, pos = False, 100
+                    elif st == "1":  # moving; leave pos as-is, don't assert is_closed
+                        pass
+
+                cover = CoverDevice(
                     id=dev_id,
                     name=dev_name,
-                    manufacturer=(dev.get("product") or {}).get("manufacturer") or "Motorline",
-                    model=(dev.get("product") or {}).get("name") or "MConnect",
-                    room_name=dev.get("_room_name"),
+                    device=meta,
+                    device_id=dev_id,
+                    is_closed=is_closed,
+                    position=pos,
+                    command_value_id=oc_id,
+                    travel_time_s=tt,
+                    supports_position=True,
                 )
+                covers.append(cover)
+                continue
 
-                # --- classify device type ---
-                is_cover = ("devices.types.shutter" in dev_type) or ("shutter" in icon) or ("blind" in icon)
-                # Some lights arrive as SWITCH type but have a bulb/lamp icon
-                is_light = ("devices.types.light" in dev_type) or ("bulb" in icon) or ("lamp" in icon) or ("light" in icon)
-
-                if is_cover:
-
-
-                    # derive the command value_id for covers from the values list (e.g., "shutter")
-                    oc_id = _first_value_id(values, "values.types.openclose")
-                    tt = _get_travel_time(values)
-
-                    pos = resolve_cover_position(values)  # your existing helper
-                    st = None if status is None else str(status)
-                    is_closed = None
-                    if pos is not None:
-                        is_closed = pos == 0
-                    elif st is not None:
-                        if st == "0":      # closed
-                            is_closed, pos = True, 0
-                        elif st == "2":    # open
-                            is_closed, pos = False, 100
-                        elif st == "1":   # moving; leave pos as-is, don't assert is_closed
-                            pass
-
-                    cover = CoverDevice(
-                        id=dev_id,
-                        name=dev_name,
-                        device=meta,
-                        device_id=dev_id,
-                        is_closed=is_closed,
-                        position=pos,
-                        command_value_id=oc_id,
-                        travel_time_s=tt,
-                        supports_position=True,
-                    )
-                    covers.append(cover)
-                    continue
-
-                if is_light:
-                    src = resolve_onoff_from_values(values)
-                    if src is not None:
-                        on, st = src
-                    else:
-                        on, st = resolve_onoff(status)  # last-resort fallback
-                    onoff_id = _first_value_id(values, "values.types.onoff")
-                    light = LightDevice(
-                        id=dev_id, name=dev_name, device=meta, device_id=dev_id,
-                        state=on, status=st, command_value_id=onoff_id
-                    )
-                    lights.append(light)
-                    continue
-
-                # Default to switch
+            if is_light:
                 src = resolve_onoff_from_values(values)
                 if src is not None:
                     on, st = src
                 else:
-                    on, st = resolve_onoff(status)
+                    on, st = resolve_onoff(status)  # last-resort fallback
                 onoff_id = _first_value_id(values, "values.types.onoff")
-                switch = SwitchDevice(
-                    id=dev_id, name=dev_name, device=meta, device_id=dev_id,
-                    state=on, status=st, command_value_id=onoff_id
+                light = LightDevice(
+                    id=dev_id,
+                    name=dev_name,
+                    device=meta,
+                    device_id=dev_id,
+                    state=on,
+                    status=st,
+                    command_value_id=onoff_id,
                 )
-                switches.append(switch)
+                lights.append(light)
+                continue
 
-            return {"switches": switches, "lights": lights, "covers": covers}
+            # Default to switch
+            src = resolve_onoff_from_values(values)
+            if src is not None:
+                on, st = src
+            else:
+                on, st = resolve_onoff(status)
+            onoff_id = _first_value_id(values, "values.types.onoff")
+            switch = SwitchDevice(
+                id=dev_id,
+                name=dev_name,
+                device=meta,
+                device_id=dev_id,
+                state=on,
+                status=st,
+                command_value_id=onoff_id,
+            )
+            switches.append(switch)
+
+        return {"switches": switches, "lights": lights, "covers": covers}
+
     # ---------- Commands ----------
-    async def async_command(self, tokens: dict, device_id: str, action: str, **kw) -> None:
+    async def async_command(
+        self, tokens: dict, device_id: str, action: str, **kw
+    ) -> None:
         """
         Send a command to a device.
 
@@ -522,7 +568,9 @@ class MConnectClient:
                     if resp.status == 401:
                         raise MConnectAuthError("Unauthorized")
                     if resp.status != 200:
-                        raise MConnectCommError(f"Command {action} failed with {resp.status}")
+                        raise MConnectCommError(
+                            f"Command {action} failed with {resp.status}"
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -544,7 +592,9 @@ class MConnectClient:
                         raise MConnectAuthError("Unauthorized")
                     if resp.status != 200:
                         txt = await resp.text()
-                        raise MConnectCommError(f"Read state failed: {resp.status} {txt}")
+                        raise MConnectCommError(
+                            f"Read state failed: {resp.status} {txt}"
+                        )
                     data = await resp.json()
             except asyncio.CancelledError:
                 raise
@@ -554,13 +604,19 @@ class MConnectClient:
             # locate this logical device and its OpenClose value
             for room in data or []:
                 for dev in room.get("devices", []):
-                    dev_id_match = str(dev.get("_id") or dev.get("id") or dev.get("device_id") or "")
+                    dev_id_match = str(
+                        dev.get("_id") or dev.get("id") or dev.get("device_id") or ""
+                    )
                     if dev_id_match != device_id:
                         continue
                     for v in dev.get("values") or []:
                         if (v.get("type") or "").lower() == "values.types.openclose":
                             # value is 0..100 according to your dump
-                            return int(v.get("value")) if v.get("value") is not None else None
+                            return (
+                                int(v.get("value"))
+                                if v.get("value") is not None
+                                else None
+                            )
             return None
 
         # --- Switch/Light on/off ---
@@ -589,7 +645,9 @@ class MConnectClient:
                 raise MConnectCommError("Missing value_id for set_position")
             pos = kw.get("position")
             if not isinstance(pos, int) or not (0 <= pos <= 100):
-                raise MConnectCommError("set_position requires integer 'position' 0..100")
+                raise MConnectCommError(
+                    "set_position requires integer 'position' 0..100"
+                )
             body = {"value_id": value_id, "value": pos}
             return await _post_command(body)
 
@@ -634,7 +692,6 @@ class MConnectClient:
 
         raise ValueError(f"Unknown action {action}")
 
-
     async def async_get_homes(self, access_token: str) -> list[dict]:
         """
         Get list of homes available to this user.
@@ -653,7 +710,9 @@ class MConnectClient:
             response_text = await resp.text()
 
             # Log homes response
-            self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
+            self._log_api_call(
+                "GET", url, response_status=resp.status, response_text=response_text
+            )
 
             if resp.status != 200:
                 raise MConnectCommError(
@@ -678,15 +737,15 @@ class MConnectClient:
             response_text = await resp.text()
 
             # Log homes response
-            self._log_api_call("GET", url, response_status=resp.status, response_text=response_text)
+            self._log_api_call(
+                "GET", url, response_status=resp.status, response_text=response_text
+            )
 
             if resp.status != 200:
                 raise MConnectCommError(
                     f"Failed to fetch homes: {resp.status} {response_text}"
                 )
             return await resp.json()
-
-
 
     async def async_endAllSessions(self, access_token: str) -> None:
         """
@@ -695,28 +754,36 @@ class MConnectClient:
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
 
-        async with self._session.get(RESET_URL, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+        async with self._session.get(
+            RESET_URL, headers=headers, timeout=ClientTimeout(total=15)
+        ) as resp:
             response_text = await resp.text()
 
             if resp.status != 200:
-                raise MConnectCommError(f"Failed to end all sessions: {resp.status} {response_text}")
+                raise MConnectCommError(
+                    f"Failed to end all sessions: {resp.status} {response_text}"
+                )
 
-
-    async def async_endAllSessionsConfirm(self, access_token: str, mfaCode: str) -> None:
+    async def async_endAllSessionsConfirm(
+        self, access_token: str, mfaCode: str
+    ) -> None:
         """
         Complete End All Sessions MFA
         """
         headers = _build_headers(self._user_agent, self._timezone)
         headers["Authorization"] = f"Bearer {access_token}"
 
-        async with self._session.delete(RESET_CODE_URL.format(code=mfaCode), headers=headers, timeout=ClientTimeout(total=15)) as resp:
+        async with self._session.delete(
+            RESET_CODE_URL.format(code=mfaCode),
+            headers=headers,
+            timeout=ClientTimeout(total=15),
+        ) as resp:
             response_text = await resp.text()
 
             if resp.status != 200:
-                raise MConnectCommError(f"Failed to verify End All Sessions: {resp.status} {response_text}")
-
-
-
+                raise MConnectCommError(
+                    f"Failed to verify End All Sessions: {resp.status} {response_text}"
+                )
 
     async def async_exchange_home_token(self, access_token: str, home_id: str) -> dict:
         """
@@ -725,8 +792,12 @@ class MConnectClient:
         LOGGER.info(f"Logging in to home {home_id}")
 
         headers = _build_headers(self._user_agent, self._timezone)
-        #headers["Authorization"] = f"Bearer {access_token}"
-        payload = {"grant_type":"authorization","code":access_token,"home_id": home_id}
+        # headers["Authorization"] = f"Bearer {access_token}"
+        payload = {
+            "grant_type": "authorization",
+            "code": access_token,
+            "home_id": home_id,
+        }
 
         # Log home token exchange request
         self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)
@@ -740,7 +811,12 @@ class MConnectClient:
             response_text = await resp.text()
 
             # Log home token exchange response
-            self._log_api_call("POST", HOMES_TOKEN_URL, response_status=resp.status, response_text=response_text)
+            self._log_api_call(
+                "POST",
+                HOMES_TOKEN_URL,
+                response_status=resp.status,
+                response_text=response_text,
+            )
 
             if resp.status != 200:
                 raise MConnectCommError(
@@ -805,7 +881,6 @@ class MConnectClient:
                 "home_id": home_id,
             }
 
-
     async def async_list_scenes(self, tokens: dict) -> list[dict]:
         """Return list of scenes; each should include at least 'id' and 'name'."""
         access = tokens.get("access")
@@ -817,9 +892,13 @@ class MConnectClient:
         url = f"{BASE_URL}/scenes"
 
         self._log_api_call("GET", url, headers=headers)
-        async with self._session.get(url, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+        async with self._session.get(
+            url, headers=headers, timeout=ClientTimeout(total=15)
+        ) as resp:
             text = await resp.text()
-            self._log_api_call("GET", url, response_status=resp.status, response_text=text)
+            self._log_api_call(
+                "GET", url, response_status=resp.status, response_text=text
+            )
 
             if resp.status == 401:
                 raise MConnectAuthError("Unauthorized (list scenes)")
@@ -829,7 +908,9 @@ class MConnectClient:
                     retry_after = float(ra) if ra is not None else None
                 except ValueError:
                     retry_after = None
-                raise MConnectRateLimitError("Rate limited (list scenes)", retry_after=retry_after)
+                raise MConnectRateLimitError(
+                    "Rate limited (list scenes)", retry_after=retry_after
+                )
             if 500 <= resp.status < 600:
                 raise MConnectServerError(f"Server error during list scenes: {text}")
             if resp.status != 200:
@@ -838,7 +919,9 @@ class MConnectClient:
             try:
                 data = await resp.json()
             except Exception as e:
-                raise MConnectCommError(f"Invalid JSON from scenes: {text[:200]}") from e
+                raise MConnectCommError(
+                    f"Invalid JSON from scenes: {text[:200]}"
+                ) from e
 
             # Normalize {"scenes":[...]} → [...]
             if isinstance(data, dict) and isinstance(data.get("scenes"), list):
@@ -858,9 +941,13 @@ class MConnectClient:
         url = f"{BASE_URL}/scenes/{scene_id}"
 
         self._log_api_call("POST", url, headers=headers)
-        async with self._session.post(url, headers=headers, timeout=ClientTimeout(total=15)) as resp:
+        async with self._session.post(
+            url, headers=headers, timeout=ClientTimeout(total=15)
+        ) as resp:
             text = await resp.text()
-            self._log_api_call("POST", url, response_status=resp.status, response_text=text)
+            self._log_api_call(
+                "POST", url, response_status=resp.status, response_text=text
+            )
 
             if resp.status == 401:
                 raise MConnectAuthError("Unauthorized (run scene)")
@@ -870,15 +957,19 @@ class MConnectClient:
                     retry_after = float(ra) if ra is not None else None
                 except ValueError:
                     retry_after = None
-                raise MConnectRateLimitError("Rate limited (run scene)", retry_after=retry_after)
+                raise MConnectRateLimitError(
+                    "Rate limited (run scene)", retry_after=retry_after
+                )
             if 500 <= resp.status < 600:
                 raise MConnectServerError(f"Server error during run scene: {text}")
             if resp.status not in (200, 204):
-                raise MConnectCommError(f"Failed to run scene {scene_id}: {resp.status} {text}")
-
+                raise MConnectCommError(
+                    f"Failed to run scene {scene_id}: {resp.status} {text}"
+                )
 
 
 # --- Helper functions ---
+
 
 def resolve_onoff_from_values(values) -> tuple[bool, Status] | None:
     """
@@ -887,7 +978,11 @@ def resolve_onoff_from_values(values) -> tuple[bool, Status] | None:
     """
     for v in values or []:
         vtype = (v.get("type") or "").lower()
-        if vtype == "values.types.onoff" and not v.get("configuration") and not v.get("query_only"):
+        if (
+            vtype == "values.types.onoff"
+            and not v.get("configuration")
+            and not v.get("query_only")
+        ):
             raw = v.get("value")
             try:
                 is_on = int(raw) == 1
@@ -912,8 +1007,6 @@ def _build_headers(user_agent: str, timezone: str) -> dict[str, str]:
         "timezone": timezone,
         "User-Agent": user_agent,  # Your explicit UA: HomeAssistant-MCONNECT/<version>
     }
-
-
 
 
 def resolve_onoff(status) -> tuple[bool, Status]:
@@ -941,6 +1034,7 @@ def resolve_cover_position(values) -> int | None:
                 continue
     return None
 
+
 def _first_value_id(values: list[dict], want_type: str) -> str | None:
     for v in values or []:
         if (v.get("type") or "").lower() == want_type.lower():
@@ -956,7 +1050,9 @@ def _first_value_id(values: list[dict], want_type: str) -> str | None:
 def _get_travel_time(values) -> int | None:
     """Extract travel time in seconds if present (values.types.Time)."""
     for v in values or []:
-        if (v.get("type") or "").lower() == "values.types.time" and (v.get("value_id") or "").lower() == "travel_time":
+        if (v.get("type") or "").lower() == "values.types.time" and (
+            v.get("value_id") or ""
+        ).lower() == "travel_time":
             try:
                 ms = int(v.get("value"))
                 return ms // 1000  # convert ms to seconds

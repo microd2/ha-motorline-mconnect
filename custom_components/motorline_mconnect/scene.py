@@ -36,7 +36,9 @@ def _derive_scene_id(entry: ConfigEntry, scene: dict) -> str:
 class MConnectScene(Scene):
     _attr_icon = "mdi:play-circle"
 
-    def __init__(self, coordinator: DataUpdateCoordinator, entry: ConfigEntry, scene: dict):
+    def __init__(
+        self, coordinator: DataUpdateCoordinator, entry: ConfigEntry, scene: dict
+    ):
         """Scene dict should have at least 'name' and '_id' per API; we hedge with fallbacks."""
         self.coordinator = coordinator
         self.entry = entry
@@ -51,7 +53,7 @@ class MConnectScene(Scene):
     @property
     def available(self) -> bool:
         # Tie availability to your coordinator/data source
-        return  self.coordinator.last_update_success is not False
+        return self.coordinator.last_update_success is not False
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Trigger the vendor scene via API."""
@@ -63,7 +65,7 @@ class MConnectScene(Scene):
 
         await self.coordinator.async_execute_with_auth(client.async_run_scene, scene_id)
         # Scenes are momentary; no state to update. Optionally refresh devices:
-        await sleep(1)   # 0.5–1.0s works well in practice
+        await sleep(1)  # 0.5–1.0s works well in practice
         await self.coordinator.async_request_refresh()
 
 
@@ -93,7 +95,9 @@ async def async_setup_entry(
 
     prefix = ""
     entities = [
-        MConnectScene(coordinator, entry, {**s, "name": f"{prefix}{s.get('name', 'Scene')}"})
+        MConnectScene(
+            coordinator, entry, {**s, "name": f"{prefix}{s.get('name', 'Scene')}"}
+        )
         for s in deduped
     ]
 

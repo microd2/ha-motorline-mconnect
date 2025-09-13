@@ -1,8 +1,8 @@
 # custom_components/motorline_mconnect/entity.py
 from __future__ import annotations
 
-from homeassistant.helpers.entity import DeviceInfo # type: ignore
-from homeassistant.helpers.update_coordinator import CoordinatorEntity # type: ignore
+from homeassistant.helpers.entity import DeviceInfo  # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 from .const import DOMAIN
 
 
@@ -16,19 +16,16 @@ class MConnectEntity(CoordinatorEntity):
         self._obj = obj
         self._attr_unique_id = obj.id
         self._attr_name = f"{obj.device.room_name} {obj.name}"
-        #self._attr_name = f"{obj.name}"
+        # self._attr_name = f"{obj.name}"
         self._attr_has_entity_name = False
 
     @property
     def client(self):
         return self.coordinator.client
 
-
-
     @property
     def device_info(self) -> DeviceInfo:
         return self._normalize_device_info(self._obj.device)
-
 
     def _normalize_device_info(self, meta) -> DeviceInfo:
         raw_model = (getattr(meta, "model", "") or "").lower()
@@ -37,7 +34,9 @@ class MConnectEntity(CoordinatorEntity):
         if "shutter" in raw_model or "blind" in raw_model:
             model = "Shutter"
         elif "switch" in raw_model:
-            model = "Dual Switch" if "dual" in raw_model or "2" in raw_model else "Switch"
+            model = (
+                "Dual Switch" if "dual" in raw_model or "2" in raw_model else "Switch"
+            )
         elif "light" in raw_model or "bulb" in raw_model or "lamp" in raw_model:
             model = "Light"
         else:
@@ -50,14 +49,14 @@ class MConnectEntity(CoordinatorEntity):
         label = (getattr(meta, "name", "") or "").strip()
         for trash in ("motorline", "mconnect"):
             if label.lower().startswith(trash):
-                label = label[len(trash):].strip(" -_")
+                label = label[len(trash) :].strip(" -_")
         if not label:
             label = f"{getattr(meta, 'room_name', '')} {model}".strip()
 
         return DeviceInfo(
             identifiers={(DOMAIN, getattr(meta, "id", ""))},
-            manufacturer=manufacturer,   # right column
-            model=model,                 # short left column
+            manufacturer=manufacturer,  # right column
+            model=model,  # short left column
             name=label,
             suggested_area=getattr(meta, "room_name", None),
         )

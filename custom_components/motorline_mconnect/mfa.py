@@ -3,6 +3,7 @@
 This module handles automatic extraction of MFA codes from Gmail and Outlook emails
 sent by noreply@mconnect.pt during the authentication process.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,10 +18,11 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 _OTP_RE = re.compile(r"\b(\d{6})\b")
 _SUBJECT_RE = re.compile(r"(Verification code|End all sessions) - (?P<code>\d{6})")
 
+
 class MailboxAuthError(Exception):
     """Mailbox (e.g., Gmail) authentication is invalid (401)."""
-    pass
 
+    pass
 
 
 class MFAManager:
@@ -37,7 +39,7 @@ class MFAManager:
         oauth_tokens: dict,
         code_type: str = "verification",
         timeout: int = 300,
-        poll_interval: int = 5
+        poll_interval: int = 5,
     ) -> str:
         """
         Wait for MFA code email and extract the 6-digit code.
@@ -86,36 +88,51 @@ class MFAManager:
                 LOGGER.info(f"MFA: Retrieved {len(messages)} messages from {provider}")
 
                 for i, msg in enumerate(messages):
-                    LOGGER.debug(f"MFA: Processing message {i+1}/{len(messages)}")
-                    body, subject, sender, received_ts = await self._get_message_content(
-                        provider, access_token, msg
+                    LOGGER.debug(f"MFA: Processing message {i + 1}/{len(messages)}")
+                    (
+                        body,
+                        subject,
+                        sender,
+                        received_ts,
+                    ) = await self._get_message_content(provider, access_token, msg)
+                    LOGGER.info(
+                        f"MFA: Message from {sender}, subject: '{subject[:50]}...', received: {received_ts}"
                     )
-                    LOGGER.info(f"MFA: Message from {sender}, subject: '{subject[:50]}...', received: {received_ts}")
 
                     # Check if message is from MConnect and recent enough
                     is_mconnect = sender.lower() == "noreply@mconnect.pt"
                     is_recent_enough = received_ts >= min_timestamp
                     is_within_window = (time.time() - received_ts) <= 5 * 60
-                    LOGGER.info(f"MFA: Checks - MConnect:{is_mconnect}, Recent:{is_recent_enough}, Window:{is_within_window}")
+                    LOGGER.info(
+                        f"MFA: Checks - MConnect:{is_mconnect}, Recent:{is_recent_enough}, Window:{is_within_window}"
+                    )
 
                     if is_mconnect and is_recent_enough and is_within_window:
-                        LOGGER.info(f"MFA: Processing MConnect email for {code_type} code")
+                        LOGGER.info(
+                            f"MFA: Processing MConnect email for {code_type} code"
+                        )
                         code = self._extract_code_from_email(body, subject, code_type)
                         LOGGER.info(f"MFA: Extracted code: {'✓' if code else '✗'}")
                         if code:
                             LOGGER.info(f"MFA: SUCCESS! Found {code_type} code: {code}")
                             return code
                     else:
-                        LOGGER.debug(f"MFA: Skipping message from {sender} (not MConnect or not recent enough)")
+                        LOGGER.debug(
+                            f"MFA: Skipping message from {sender} (not MConnect or not recent enough)"
+                        )
 
                 LOGGER.debug(f"MFA: Sleeping for {poll_interval}s before next poll")
                 await asyncio.sleep(poll_interval)
 
         finally:
             self._polling = False
-            LOGGER.info(f"MFA: Polling completed after {poll_count if 'poll_count' in locals() else 0} attempts")
+            LOGGER.info(
+                f"MFA: Polling completed after {poll_count if 'poll_count' in locals() else 0} attempts"
+            )
 
-        LOGGER.warning(f"MFA: TIMEOUT - No {code_type} code found within {timeout} seconds")
+        LOGGER.warning(
+            f"MFA: TIMEOUT - No {code_type} code found within {timeout} seconds"
+        )
         raise TimeoutError(
             f"Timed out waiting for {code_type.replace('_', ' ')} email ({timeout} seconds)"
         )
@@ -140,13 +157,16 @@ class MFAManager:
         implementation = oauth_tokens.get("implementation")
         if implementation:
             from .const import LOGGER
+
             LOGGER.error("MFA: Need to perform OAuth2 flow to get Gmail access tokens")
             # The proper solution is to integrate with HA's OAuth2 flow here
             # For now, this explains why it's failing
 
         return None
 
-    def _extract_code_from_email(self, body: str, subject: str, code_type: str) -> str | None:
+    def _extract_code_from_email(
+        self, body: str, subject: str, code_type: str
+    ) -> str | None:
         """
         Extract MFA code from email content.
 
@@ -175,11 +195,14 @@ class MFAManager:
 
         return None
 
-    async def _list_recent_messages(self, provider: str, access_token: str) -> list[dict]:
+    async def _list_recent_messages(
+        self, provider: str, access_token: str
+    ) -> list[dict]:
         """List recent messages from MConnect."""
         auth_header = {"Authorization": f"Bearer {access_token}"}
 
         from .const import LOGGER
+
         LOGGER.debug(f"MFA: Listing messages for provider {provider}")
         match provider:
             case p if p.endswith("_gmail"):
@@ -195,6 +218,7 @@ class MFAManager:
     async def _list_gmail_messages(self, auth_header: dict) -> list[dict]:
         """List recent Gmail messages from noreply@mconnect.pt."""
         from .const import LOGGER
+
         query = 'from:noreply@mconnect.pt subject:(verification OR "end all sessions") newer_than:1h'
         LOGGER.info(f"MFA: Gmail query: {query}")
         url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
@@ -206,7 +230,7 @@ class MFAManager:
             ) as resp:
                 LOGGER.info(f"MFA: Gmail API response status: {resp.status}")
                 if resp.status == 401:
-                     raise MailboxAuthError("gmail_unauthenticated")
+                    raise MailboxAuthError("gmail_unauthenticated")
                 if resp.status != 200:
                     error_text = await resp.text()
                     LOGGER.error(f"MFA: Gmail API error {resp.status}: {error_text}")
@@ -219,14 +243,16 @@ class MFAManager:
             for msg in data.get("messages", []):
                 msg_id = msg.get("id")
                 if msg_id:
-                    messages.append({
-                        "id": msg_id,
-                        "subject": "",
-                        "from": "",
-                        "body_preview": "",
-                        "received_ts": 0,
-                        "provider": "gmail"
-                    })
+                    messages.append(
+                        {
+                            "id": msg_id,
+                            "subject": "",
+                            "from": "",
+                            "body_preview": "",
+                            "received_ts": 0,
+                            "provider": "gmail",
+                        }
+                    )
             return messages
 
         except (ClientError, TimeoutError, asyncio.TimeoutError):
@@ -235,7 +261,9 @@ class MFAManager:
     async def _list_microsoft_messages(self, auth_header: dict) -> list[dict]:
         """List recent Microsoft Graph messages from noreply@mconnect.pt."""
         # Filter by sender and date, ordered by most recent first
-        filter_date = datetime.fromtimestamp(self._start_time - 3600, tz=UTC).isoformat()  # 1 hour ago
+        filter_date = datetime.fromtimestamp(
+            self._start_time - 3600, tz=UTC
+        ).isoformat()  # 1 hour ago
         url = (
             "https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages"
             f"?$filter=receivedDateTime ge {filter_date} and "
@@ -255,24 +283,22 @@ class MFAManager:
             messages = []
             for item in data.get("value", []):
                 subject = item.get("subject", "")
-                sender = (
-                    item.get("from", {})
-                    .get("emailAddress", {})
-                    .get("address", "")
-                )
+                sender = item.get("from", {}).get("emailAddress", {}).get("address", "")
                 preview = item.get("bodyPreview", "")
                 received_dt = item.get("receivedDateTime", "")
                 received_ts = self._parse_iso_timestamp(received_dt)
                 body = preview or item.get("body", {}).get("content", "")
 
-                messages.append({
-                    "id": item.get("id"),
-                    "subject": subject,
-                    "from": sender,
-                    "body_preview": body,
-                    "received_ts": received_ts,
-                    "provider": "microsoft"
-                })
+                messages.append(
+                    {
+                        "id": item.get("id"),
+                        "subject": subject,
+                        "from": sender,
+                        "body_preview": body,
+                        "received_ts": received_ts,
+                        "provider": "microsoft",
+                    }
+                )
             return messages
 
         except (ClientError, TimeoutError, asyncio.TimeoutError):
@@ -289,7 +315,7 @@ class MFAManager:
                     msg.get("body_preview", ""),
                     msg.get("subject", ""),
                     msg.get("from", ""),
-                    msg.get("received_ts", 0)
+                    msg.get("received_ts", 0),
                 )
             case p if p.endswith("_gmail"):
                 return await self._get_gmail_message_content(access_token, msg)
@@ -360,7 +386,9 @@ class MFAManager:
             body = part.get("body", {})
 
             # Check if this part has text content
-            if body.get("data") and ("text/plain" in mime_type or "text/html" in mime_type):
+            if body.get("data") and (
+                "text/plain" in mime_type or "text/html" in mime_type
+            ):
                 try:
                     decoded = base64.urlsafe_b64decode(
                         body["data"].encode("utf-8")
@@ -394,7 +422,7 @@ async def wait_for_mfa_code(
     provider: str,
     oauth_tokens: dict,
     code_type: str = "verification",
-    timeout: int = 300
+    timeout: int = 300,
 ) -> str:
     """
     Convenience function to wait for MFA code.

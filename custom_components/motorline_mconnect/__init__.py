@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.const import Platform # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
-from homeassistant.loader import async_get_integration # type: ignore
-from homeassistant.util import dt as dt_util # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.const import Platform  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.loader import async_get_integration  # type: ignore
+from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import DOMAIN
 from .coordinator import MConnectCoordinator
@@ -14,6 +14,7 @@ from .coordinator import MConnectCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE]
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Build UA from the manifest version (HACS requires this field in manifest.json)

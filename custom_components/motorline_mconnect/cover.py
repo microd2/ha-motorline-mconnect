@@ -21,11 +21,15 @@ class MConnectCover(MConnectEntity, CoverEntity):
 
     def __init__(self, coordinator, entry: ConfigEntry, obj: CoverDevice):
         super().__init__(coordinator, entry, obj, kind="covers")
-        feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP | CoverEntityFeature.SET_POSITION
+        feats = (
+            CoverEntityFeature.OPEN
+            | CoverEntityFeature.CLOSE
+            | CoverEntityFeature.STOP
+            | CoverEntityFeature.SET_POSITION
+        )
         self._attr_supported_features = feats
         self._last_target: int | None = None
         self._poke_handles: list[asyncio.TimerHandle] = []
-
 
     # ---------- State ----------
     @property
@@ -45,11 +49,16 @@ class MConnectCover(MConnectEntity, CoverEntity):
             return
         self._last_target = 100  # remember last target
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "set_position",
-            value_id=vid, position=100
+            self.client.async_command,
+            self._obj.device_id,
+            "set_position",
+            value_id=vid,
+            position=100,
         )
         await self.coordinator.async_refresh()  # immediate post-command truth
-        self._schedule_poke_refresh(_motion_delays(getattr(self._obj, "travel_time_s", None)))
+        self._schedule_poke_refresh(
+            _motion_delays(getattr(self._obj, "travel_time_s", None))
+        )
 
     async def async_close_cover(self, **kwargs) -> None:
         vid = self._obj.command_value_id
@@ -57,11 +66,16 @@ class MConnectCover(MConnectEntity, CoverEntity):
             return
         self._last_target = 0
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "set_position",
-            value_id=vid, position=0
+            self.client.async_command,
+            self._obj.device_id,
+            "set_position",
+            value_id=vid,
+            position=0,
         )
         await self.coordinator.async_refresh()
-        self._schedule_poke_refresh(_motion_delays(getattr(self._obj, "travel_time_s", None)))
+        self._schedule_poke_refresh(
+            _motion_delays(getattr(self._obj, "travel_time_s", None))
+        )
 
     async def async_set_cover_position(self, **kwargs) -> None:
         vid = self._obj.command_value_id
@@ -70,11 +84,16 @@ class MConnectCover(MConnectEntity, CoverEntity):
         pos = int(kwargs["position"])
         self._last_target = pos
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "set_position",
-            value_id=vid, position=pos
+            self.client.async_command,
+            self._obj.device_id,
+            "set_position",
+            value_id=vid,
+            position=pos,
         )
         await self.coordinator.async_refresh()
-        self._schedule_poke_refresh(_motion_delays(getattr(self._obj, "travel_time_s", None)))
+        self._schedule_poke_refresh(
+            _motion_delays(getattr(self._obj, "travel_time_s", None))
+        )
 
     async def async_stop_cover(self, **kwargs) -> None:
         vid = self._obj.command_value_id
@@ -87,14 +106,15 @@ class MConnectCover(MConnectEntity, CoverEntity):
             self._last_target = target
 
         await self.coordinator.async_execute_with_auth(
-            self.client.async_command, self._obj.device_id, "set_position",
-            value_id=vid, position=int(target)
+            self.client.async_command,
+            self._obj.device_id,
+            "set_position",
+            value_id=vid,
+            position=int(target),
         )
         # Make the UI snap to the stopped percent
         await self.coordinator.async_refresh()
-        self._schedule_poke_refresh((0.5,1.0,2.0))
-
-
+        self._schedule_poke_refresh((0.5, 1.0, 2.0))
 
     def _schedule_poke_refresh(self, delays: tuple[float, ...]) -> None:
         """Schedule forced refreshes at absolute offsets (seconds), cancelling any previous schedule."""
@@ -114,6 +134,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
             )
             self._poke_handles.append(handle)
 
+
 # --------- REQUIRED: platform setup for config entries ---------
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -127,6 +148,7 @@ async def async_setup_entry(
         covers_raw = data["covers"]
     elif isinstance(data, list):
         from .models import CoverDevice  # if not already imported at top
+
         covers_raw = [obj for obj in data if isinstance(obj, CoverDevice)]
 
     entities = [MConnectCover(coordinator, entry, obj) for obj in covers_raw]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from homeassistant.components.light import LightEntity # type: ignore
+from homeassistant.components.light import LightEntity  # type: ignore
 
 from .const import DOMAIN
 from .entity import MConnectEntity

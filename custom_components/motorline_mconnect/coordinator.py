@@ -7,12 +7,12 @@ import random
 import time
 from datetime import timedelta
 
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
-from homeassistant.exceptions import ConfigEntryAuthFailed # type: ignore
-from homeassistant.helpers.aiohttp_client import async_get_clientsession # type: ignore
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator # type: ignore
-from homeassistant.helpers import config_entry_oauth2_flow as oauth2 # type: ignore
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.exceptions import ConfigEntryAuthFailed  # type: ignore
+from homeassistant.helpers.aiohttp_client import async_get_clientsession  # type: ignore
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator  # type: ignore
+from homeassistant.helpers import config_entry_oauth2_flow as oauth2  # type: ignore
 
 from .api import (
     MConnectAuthError,
@@ -36,7 +36,9 @@ REFRESH_SKEW_SECONDS = 300  # refresh 5 minutes early
 class MConnectCoordinator(DataUpdateCoordinator[dict]):
     """Fetches snapshots; handles jitter, backoff, and forced auto-relogin."""
 
-    def __init__(self, hass: HomeAssistant, entry, user_agent: str, timezone: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry, user_agent: str, timezone: str
+    ) -> None:
         self.hass = hass
         self.entry = entry
 
@@ -47,9 +49,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         )
 
         # polling policy
-        self._base_interval_seconds = 180      # idle
-        self._active_interval_seconds = 45     # shortly after user actions
-        self._recent_activity_window = 120     # seconds
+        self._base_interval_seconds = 180  # idle
+        self._active_interval_seconds = 45  # shortly after user actions
+        self._recent_activity_window = 120  # seconds
         self._recent_activity_until = 0.0
         self._jitter = 0.15
 
@@ -69,7 +71,11 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         self._recent_activity_until = time.time() + self._recent_activity_window
 
     def _compute_target_base_interval(self) -> float:
-        return self._active_interval_seconds if time.time() < self._recent_activity_until else self._base_interval_seconds
+        return (
+            self._active_interval_seconds
+            if time.time() < self._recent_activity_until
+            else self._base_interval_seconds
+        )
 
     # ----- interval helpers -----
     def _jittered_interval(self) -> timedelta:
@@ -77,11 +83,14 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         secs = int(self._base_interval_seconds * factor)
         return timedelta(seconds=max(1, secs))
 
-
     def _apply_success_interval(self) -> None:
         """Normal cadence: adaptive base (active vs idle) + jitter."""
         # Decide active vs idle base interval
-        base = self._active_interval_seconds if time.time() < self._recent_activity_until else self._base_interval_seconds
+        base = (
+            self._active_interval_seconds
+            if time.time() < self._recent_activity_until
+            else self._base_interval_seconds
+        )
 
         # Jitter
         factor = 1.0 + random.uniform(-self._jitter, self._jitter)
@@ -91,9 +100,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         self._current_interval_seconds = base
         self.update_interval = timedelta(seconds=secs)
 
-
-
-    def _apply_backoff_interval(self, reason: str, retry_after: float | None = None) -> None:
+    def _apply_backoff_interval(
+        self, reason: str, retry_after: float | None = None
+    ) -> None:
         """
         Increase the polling interval after an error.
 
@@ -105,7 +114,10 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             next_wait = max(self._current_interval_seconds, float(retry_after))
             used = f"retry_after={retry_after:g}s"
         else:
-            next_wait = min(self._current_interval_seconds * self._backoff_multiplier, self._max_backoff_seconds)
+            next_wait = min(
+                self._current_interval_seconds * self._backoff_multiplier,
+                self._max_backoff_seconds,
+            )
             used = f"backoff*x{self._backoff_multiplier:g}"
 
         # 2) Add jitter
@@ -136,7 +148,10 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         """Persist updated tokens, preserving existing fields and normalizing expiry."""
         # 1) Start from what's already stored so we don't lose fields like user_refresh/home_id
         existing = dict(self.entry.data.get(CONF_MCONNECT_TOKENS) or {})
-        merged = {**existing, **(new_tokens or {})}  # new values override; missing keys are preserved
+        merged = {
+            **existing,
+            **(new_tokens or {}),
+        }  # new values override; missing keys are preserved
 
         # normalize legacy key once: 'refresh_token' -> 'refresh'
         if "refresh" not in merged and "refresh_token" in merged:
@@ -167,17 +182,13 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
 
         # Optional: debug log without leaking secrets
         try:
-            _LOGGER.debug("Tokens saved (home_id=%s, exp_at=%s)",
+            _LOGGER.debug(
+                "Tokens saved (home_id=%s, exp_at=%s)",
                 merged.get("home_id"),
                 merged.get("expires_at"),
             )
         except Exception:
             pass
-
-
-
-
-
 
     async def async_ensure_fresh_tokens(self) -> dict:
         """
@@ -207,19 +218,25 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
 
         home_id = tokens.get("home_id")
         home_refresh = tokens.get("refresh")
-        user_refresh = tokens.get("user_refresh")  # we will carry this forward unchanged
+        user_refresh = tokens.get(
+            "user_refresh"
+        )  # we will carry this forward unchanged
 
         # Prefer HOME refresh; we do not use user tokens here
         if home_id and home_refresh:
             try:
-                new_home = await self.client.async_refresh_home_tokens(home_id, home_refresh)
+                new_home = await self.client.async_refresh_home_tokens(
+                    home_id, home_refresh
+                )
                 # Ensure expected fields are present & preserved
                 new_home["home_id"] = home_id
                 if user_refresh:
                     new_home["user_refresh"] = user_refresh  # preserve for future flows
                 # Ensure expires_at is set going forward
                 if new_home.get("expires_in") and not new_home.get("expires_at"):
-                    new_home["expires_at"] = int(time.time()) + int(new_home["expires_in"])
+                    new_home["expires_at"] = int(time.time()) + int(
+                        new_home["expires_in"]
+                    )
                 await self._save_tokens(new_home)
                 return new_home
             except MConnectError as e:
@@ -229,11 +246,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         if await self._try_auto_relogin_and_retry():
             return dict(self.entry.data.get(CONF_MCONNECT_TOKENS) or {})
 
-        raise ConfigEntryAuthFailed("Home refresh failed and auto re-login unsuccessful")
-
-
-
-
+        raise ConfigEntryAuthFailed(
+            "Home refresh failed and auto re-login unsuccessful"
+        )
 
     async def _async_update_data(self) -> dict:
         tokens = await self.async_ensure_fresh_tokens()
@@ -254,14 +269,14 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
 
         except MConnectRateLimitError as e:
             # NEW: respect server-provided Retry-After when present
-            self._apply_backoff_interval("rate limiting (429)", retry_after=getattr(e, "retry_after", None))
+            self._apply_backoff_interval(
+                "rate limiting (429)", retry_after=getattr(e, "retry_after", None)
+            )
             return self.data or {}
 
         except (MConnectServerError, MConnectCommError):
             self._apply_backoff_interval("server/communication error")
             return self.data or {}
-
-
 
     # ----- helper used by fetch and commands -----
     async def _try_auto_relogin_and_retry(self) -> bool:
@@ -293,10 +308,6 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         except MConnectError:
             return False
 
-
-
-
-
     async def async_execute_with_auth(self, func, *args, **kwargs):
         """Run a client call; ensure fresh tokens, on 401 auto-relogin once and retry."""
         tokens = await self.async_ensure_fresh_tokens()
@@ -309,10 +320,6 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             tokens = self.entry.data.get(CONF_MCONNECT_TOKENS) or {}
             return await func(tokens, *args, **kwargs)
 
-
-
-
-
     async def _ensure_fresh_gmail_oauth(self) -> dict:
         """Ensure Gmail OAuth token is valid; migrate shapes; persist updates."""
         data = dict(self.entry.data)
@@ -320,7 +327,11 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         # 1) Find the token (prefer modern location "token", else legacy CONF_EMAIL_OAUTH)
         token = data.get("token") or data.get(CONF_EMAIL_OAUTH) or {}
         # Unwrap legacy shape: {"token": {...}} -> {...}
-        if isinstance(token, dict) and "token" in token and isinstance(token["token"], dict):
+        if (
+            isinstance(token, dict)
+            and "token" in token
+            and isinstance(token["token"], dict)
+        ):
             token = token["token"]
 
         # 2) Make sure the entry actually stores the token at data["token"]
@@ -330,7 +341,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
 
         # 3) Get an implementation; persist id if missing (handles old entries)
         try:
-            impl = await oauth2.async_get_config_entry_implementation(self.hass, self.entry)
+            impl = await oauth2.async_get_config_entry_implementation(
+                self.hass, self.entry
+            )
         except Exception:
             impls = await oauth2.async_get_implementations(self.hass, DOMAIN)
             if not impls:
@@ -349,7 +362,9 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
         if fresh != token:
             data = dict(self.entry.data)
             data["token"] = fresh
-            data[CONF_EMAIL_OAUTH] = fresh  # optional: keep both until you remove legacy reads
+            data[CONF_EMAIL_OAUTH] = (
+                fresh  # optional: keep both until you remove legacy reads
+            )
             self.hass.config_entries.async_update_entry(self.entry, data=data)
 
         return fresh
