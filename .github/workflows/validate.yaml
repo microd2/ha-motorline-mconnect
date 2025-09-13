@@ -1,0 +1,45 @@
+name: "Validate"
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  validate:
+    name: "Validate code"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Checkout the repository"
+        uses: "actions/checkout@v4.1.1"
+
+      - name: "Set up Python"
+        uses: "actions/setup-python@v4.7.1"
+        with:
+          python-version: "3.12"
+
+      - name: "Install requirements"
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: "Run ruff format check"
+        run: |
+          ruff format --check .
+
+      - name: "Run ruff linting"
+        run: |
+          ruff check .
+
+  hacs:
+    name: "HACS validation"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Checkout the repository"
+        uses: "actions/checkout@v4.1.1"
+
+      - name: "HACS validation"
+        uses: "hacs/action@main"
+        with:
+          category: "integration"

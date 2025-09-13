@@ -1,0 +1,46 @@
+{
+  "title": "Motorline MConnect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Bei MConnect anmelden",
+        "description": "Geben Sie Ihren Motorline MConnect‑Benutzernamen und Ihr Passwort ein.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
+      "provider": {
+        "title": "E‑Mail‑MFA‑Anbieter",
+        "description": "Wählen Sie den E‑Mail‑Anbieter, an den MConnect Ihren MFA‑Code sendet.",
+        "data": {
+          "provider": "Anbieter"
+        }
+      },
+      "pick_implementation": {
+        "title": "OAuth2‑Einrichtung",
+        "description": "Wählen Sie Ihre OAuth2‑Anmeldedaten."
+      },
+      "oauth_setup": {
+        "title": "Einrichtung der OAuth2‑Anwendung erforderlich",
+        "description": "Sie müssen OAuth2‑Anmeldedaten einrichten:\n\n1. Gehen Sie zu Einstellungen → Geräte & Dienste → ⋮ → Anmeldedaten für Anwendungen\n2. Klicken Sie auf „Anmeldedaten für Anwendung hinzufügen“\n3. Wählen Sie „{provider}“ als Anwendung\n4. Geben Sie die Details Ihrer OAuth2‑App ein (Client‑ID, Client‑Secret)\n5. Verwenden Sie die Autorisierungsdomäne: `{auth_domain}`\n\nNachdem Sie die Einrichtung abgeschlossen haben, aktivieren Sie das Kontrollkästchen unten, um fortzufahren.",
+        "data": {
+          "setup_complete": "Ich habe die OAuth2‑Anmeldedaten eingerichtet"
+        }
+      },
+      "gmail_code_entry": {
+        "title": "Geben Sie den Gmail‑Autorisierungscode ein",
+        "description": "Nachdem Sie sich bei Google angemeldet haben, wurden Sie auf eine Seite weitergeleitet, die einen Autorisierungscode anzeigt.\n\nKopieren Sie diesen Code und fügen Sie ihn unten ein:",
+        "data": {
+          "authorization_code": "Autorisierungscode"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Authentifizierung fehlgeschlagen: {error}",
+      "cannot_connect": "Verbindungsfehler: {error}",
+      "unknown": "Unerwarteter Fehler: {error}",
+      "no_implementations": "Keine OAuth2‑Implementierungen verfügbar. Es wird eine Ersatzauthentifizierung für die Entwicklung verwendet."
+    }
+  }
+}

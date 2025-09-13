@@ -1,0 +1,46 @@
+{
+  "title": "Motorline MConnect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Iniciar sessão no MConnect",
+        "description": "Introduza o seu nome de utilizador e a sua palavra‑passe do Motorline MConnect.",
+        "data": {
+          "username": "Nome de utilizador",
+          "password": "Palavra‑passe"
+        }
+      },
+      "provider": {
+        "title": "Fornecedor de MFA por e‑mail",
+        "description": "Escolha o serviço de e‑mail para o qual o MConnect envia o seu código MFA.",
+        "data": {
+          "provider": "Fornecedor"
+        }
+      },
+      "pick_implementation": {
+        "title": "Configuração do OAuth2",
+        "description": "Selecione as suas credenciais da aplicação OAuth2."
+      },
+      "oauth_setup": {
+        "title": "É necessária a configuração da aplicação OAuth2",
+        "description": "Tem de configurar as credenciais da aplicação OAuth2:\n\n1. Vá a Definições → Dispositivos e serviços → ⋮ → Credenciais da aplicação\n2. Clique em «Adicionar credencial da aplicação»\n3. Selecione «{provider}» como aplicação\n4. Introduza os dados da sua aplicação OAuth2 (ID de cliente, segredo de cliente)\n5. Utilize o domínio de autorização: `{auth_domain}`\n\nDepois de concluir a configuração, assinale a caixa abaixo para continuar.",
+        "data": {
+          "setup_complete": "Configurei as credenciais da aplicação OAuth2"
+        }
+      },
+      "gmail_code_entry": {
+        "title": "Introduza o código de autorização do Gmail",
+        "description": "Depois de iniciar sessão no Google, foi redirecionado para uma página que mostrava um código de autorização.\n\nCopie esse código e cole‑o abaixo:",
+        "data": {
+          "authorization_code": "Código de autorização"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Falha na autenticação: {error}",
+      "cannot_connect": "Erro de ligação: {error}",
+      "unknown": "Erro inesperado: {error}",
+      "no_implementations": "Não existem implementações OAuth2 disponíveis. Será utilizada uma autenticação de recurso para o desenvolvimento."
+    }
+  }
+}

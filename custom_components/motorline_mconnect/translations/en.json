@@ -1,0 +1,46 @@
+{
+    "title": "Motorline MConnect",
+    "config": {
+      "step": {
+        "user": {
+          "title": "Sign in to MConnect",
+          "description": "Enter your Motorline MConnect username and password.",
+          "data": {
+            "username": "Username",
+            "password": "Password"
+          }
+        },
+        "provider": {
+          "title": "Email MFA provider",
+          "description": "Choose the mailbox provider where MConnect sends your MFA code.",
+          "data": {
+            "provider": "Provider"
+          }
+        },
+        "pick_implementation": {
+          "title": "OAuth2 Setup",
+          "description": "Choose your OAuth2 application credentials."
+        },
+        "oauth_setup": {
+          "title": "OAuth2 Application Setup Required",
+          "description": "You need to set up OAuth2 application credentials:\n\n1. Go to Settings → Devices & Services → ⋮ → Application credentials\n2. Click 'Add Application Credential'\n3. Choose '{provider}' as the application\n4. Enter your OAuth2 app details (client ID, client secret)\n5. Use authorization domain: `{auth_domain}`\n\nOnce configured, check the box below to continue.",
+          "data": {
+            "setup_complete": "I have configured the OAuth2 application credentials"
+          }
+        },
+        "gmail_code_entry": {
+          "title": "Enter Gmail Authorization Code",
+          "description": "After signing in to Google, you should have been redirected to a page showing an authorization code.\n\nCopy the authorization code from that page and paste it below:",
+          "data": {
+            "authorization_code": "Authorization Code"
+          }
+        }
+      },
+      "error": {
+        "invalid_auth": "Authentication failed : {error}",
+        "cannot_connect": "Connection error : {error}",
+        "unknown": "Unexpected error : {error}",
+        "no_implementations": "No OAuth2 implementations available. Using fallback authentication for development."
+      }
+    }
+  }

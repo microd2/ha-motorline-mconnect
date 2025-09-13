@@ -1,0 +1,46 @@
+{
+  "title": "Motorline MConnect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Se connecter à MConnect",
+        "description": "Saisissez votre identifiant et votre mot de passe Motorline MConnect.",
+        "data": {
+          "username": "Nom d’utilisateur",
+          "password": "Mot de passe"
+        }
+      },
+      "provider": {
+        "title": "Fournisseur MFA par e‑mail",
+        "description": "Choisissez le service de messagerie vers lequel MConnect envoie votre code MFA.",
+        "data": {
+          "provider": "Fournisseur"
+        }
+      },
+      "pick_implementation": {
+        "title": "Configuration d’OAuth2",
+        "description": "Sélectionnez vos identifiants d’application OAuth2."
+      },
+      "oauth_setup": {
+        "title": "Configuration de l’application OAuth2 requise",
+        "description": "Vous devez configurer les identifiants OAuth2 de l’application :\n\n1. Allez dans Paramètres → Appareils et services → ⋮ → Identifiants d’application\n2. Cliquez sur « Ajouter un identifiant d’application »\n3. Sélectionnez « {provider} » comme application\n4. Saisissez les informations de votre application OAuth2 (ID client, secret client)\n5. Utilisez le domaine d’autorisation : `{auth_domain}`\n\nUne fois la configuration terminée, cochez la case ci‑dessous pour continuer.",
+        "data": {
+          "setup_complete": "J’ai configuré les identifiants de l’application OAuth2"
+        }
+      },
+      "gmail_code_entry": {
+        "title": "Saisissez le code d’autorisation Gmail",
+        "description": "Après vous être connecté à Google, vous avez été redirigé vers une page affichant un code d’autorisation.\n\nCopiez ce code et collez‑le ci‑dessous :",
+        "data": {
+          "authorization_code": "Code d’autorisation"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Échec de l’authentification : {error}",
+      "cannot_connect": "Erreur de connexion : {error}",
+      "unknown": "Erreur inattendue : {error}",
+      "no_implementations": "Aucune implémentation OAuth2 disponible. Utilisation d’une authentification de secours pour le développement."
+    }
+  }
+}

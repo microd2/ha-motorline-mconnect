@@ -1,0 +1,46 @@
+{
+  "title": "Motorline MConnect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Iniciar sesión en MConnect",
+        "description": "Introduzca su nombre de usuario y contraseña de Motorline MConnect.",
+        "data": {
+          "username": "Nombre de usuario",
+          "password": "Contraseña"
+        }
+      },
+      "provider": {
+        "title": "Proveedor de MFA por correo electrónico",
+        "description": "Elija el servicio de correo al que MConnect envía su código MFA.",
+        "data": {
+          "provider": "Proveedor"
+        }
+      },
+      "pick_implementation": {
+        "title": "Configuración de OAuth2",
+        "description": "Seleccione sus credenciales de aplicación OAuth2."
+      },
+      "oauth_setup": {
+        "title": "Se requiere la configuración de la aplicación OAuth2",
+        "description": "Debe configurar las credenciales de la aplicación OAuth2:\n\n1. Vaya a Configuración → Dispositivos y servicios → ⋮ → Credenciales de aplicación\n2. Haga clic en «Añadir credencial de aplicación»\n3. Seleccione «{provider}» como aplicación\n4. Introduzca los datos de su aplicación OAuth2 (ID de cliente, secreto de cliente)\n5. Utilice el dominio de autorización: `{auth_domain}`\n\nUna vez completada la configuración, marque la casilla a continuación para continuar.",
+        "data": {
+          "setup_complete": "He configurado las credenciales de la aplicación OAuth2"
+        }
+      },
+      "gmail_code_entry": {
+        "title": "Introduzca el código de autorización de Gmail",
+        "description": "Después de iniciar sesión en Google, fue redirigido a una página que muestra un código de autorización.\n\nCopie este código y péguelo a continuación:",
+        "data": {
+          "authorization_code": "Código de autorización"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Error de autenticación: {error}",
+      "cannot_connect": "Error de conexión: {error}",
+      "unknown": "Error inesperado: {error}",
+      "no_implementations": "No hay implementaciones de OAuth2 disponibles. Se utilizará una autenticación alternativa para el desarrollo."
+    }
+  }
+}
