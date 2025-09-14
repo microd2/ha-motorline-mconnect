@@ -63,7 +63,7 @@ class MConnectScene(Scene):
             LOGGER.error("MConnectScene: missing client or scene_id")
             return
 
-        await self.coordinator.async_execute_with_auth(client.async_run_scene, scene_id)
+        await self.coordinator.async_execute_with_retry(client.async_run_scene, scene_id)
         # Scenes are momentary; no state to update. Optionally refresh devices:
         await sleep(1)  # 0.5–1.0s works well in practice
         await self.coordinator.async_request_refresh()
@@ -80,7 +80,7 @@ async def async_setup_entry(
         return
 
     # Fetch scenes via the coordinator wrapper so tokens are fresh
-    scenes = await coordinator.async_execute_with_auth(client.async_list_scenes)
+    scenes = await coordinator.async_execute_with_retry(client.async_list_scenes)
     scenes = scenes or []
 
     # Order-preserving dedupe by stable scene id

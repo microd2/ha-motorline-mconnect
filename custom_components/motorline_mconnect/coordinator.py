@@ -319,6 +319,31 @@ class MConnectCoordinator(DataUpdateCoordinator[dict]):
             # After successful re-login, retry once with new tokens
             tokens = self.entry.data.get(CONF_MCONNECT_TOKENS) or {}
             return await func(tokens, *args, **kwargs)
+        
+
+    async def async_execute_with_retry(self, func, *args, **kwargs):
+        """
+        Like async_execute_with_auth, but also retries transient gateway/server/network
+        errors a few times with short backoff. Use for device commands where a 502 may
+        be transient.
+        """
+        import asyncio
+
+        attempts = 3
+        for i in range(attempts):
+            try:
+                return await self.async_execute_with_auth(func, *args, **kwargs)
+            except MConnectRateLimitError as e:
+                # Respect Retry-After if present, else short sleep
+                wait = getattr(e, "retry_after", None) or (1.5 * (i + 1))
+                self._apply_backoff_interval("rate limiting (command)", retry_after=wait)
+                await asyncio.sleep(min(wait, 10))
+            except (MConnectServerError, MConnectCommError):
+                # Transient gateway/network error → short linear backoff
+                await asyncio.sleep(1.5 * (i + 1))
+                if i == attempts - 1:
+                    raise
+    
 
     async def _ensure_fresh_gmail_oauth(self) -> dict:
         """Ensure Gmail OAuth token is valid; migrate shapes; persist updates."""

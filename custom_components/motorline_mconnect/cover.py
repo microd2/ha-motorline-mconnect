@@ -48,7 +48,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
         if not vid:
             return
         self._last_target = 100  # remember last target
-        await self.coordinator.async_execute_with_auth(
+        await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",
@@ -65,7 +65,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
         if not vid:
             return
         self._last_target = 0
-        await self.coordinator.async_execute_with_auth(
+        await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",
@@ -83,7 +83,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
             return
         pos = int(kwargs["position"])
         self._last_target = pos
-        await self.coordinator.async_execute_with_auth(
+        await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",
@@ -105,7 +105,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
             target = int(self._obj.position or 0)
             self._last_target = target
 
-        await self.coordinator.async_execute_with_auth(
+        await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",

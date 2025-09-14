@@ -536,7 +536,7 @@ class MConnectClient:
 
         return {"switches": switches, "lights": lights, "covers": covers}
 
-    # ---------- Commands ----------
+# ---------- Commands ----------
     async def async_command(
         self, tokens: dict, device_id: str, action: str, **kw
     ) -> None:
@@ -544,10 +544,10 @@ class MConnectClient:
         Send a command to a device.
 
         Supported actions:
-        - "on", "off"        → switches/lights (values.types.OnOff, e.g. "switch_01")
-        - "open", "close"    → covers/shutters (values.types.OpenClose, e.g. "shutter")
+        - "on", "off"        → switches/lights (values.types.OnOff)
+        - "open", "close"    → covers/shutters (values.types.OpenClose)
         - "set_position"     → covers with position (0..100)
-        - "stop"             → send the same edge command again (see below)
+        - "stop"             → repeat edge command based on current movement direction
 
         kw:
         - value_id: str      (entity passes this from .command_value_id)
@@ -562,19 +562,55 @@ class MConnectClient:
 
         # --- helpers (local) ---
         async def _post_command(body: dict) -> None:
-            headers = {"Authorization": f"Bearer {access}"}
+            headers = _build_headers(self._user_agent, self._timezone)
+            headers["Authorization"] = f"Bearer {access}"
+            headers["Accept"] = "application/json"
+            headers["Content-Type"] = "application/json"
+
             try:
-                async with self._session.post(url, json=body, headers=headers) as resp:
+                # log request
+                self._log_api_call("POST", url, payload=body, headers=headers)
+
+                async with self._session.post(
+                    url, json=body, headers=headers, timeout=ClientTimeout(total=15)
+                ) as resp:
+                    text = await resp.text()
+
+                    # log response
+                    self._log_api_call(
+                        "POST",
+                        url,
+                        response_status=resp.status,
+                        response_text=text,
+                    )
+
                     if resp.status == 401:
                         raise MConnectAuthError("Unauthorized")
+                    if resp.status == 429:
+                        ra = resp.headers.get("Retry-After")
+                        try:
+                            retry_after = float(ra) if ra is not None else None
+                        except ValueError:
+                            retry_after = None
+                        raise MConnectRateLimitError(
+                            "Rate limited (command)", retry_after=retry_after
+                        )
+                    if 500 <= resp.status < 600:
+                        # Gateway/server problem — let caller back off/retry.
+                        raise MConnectServerError(
+                            f"Command {action} failed {resp.status}: {text}"
+                        )
                     if resp.status != 200:
+                        # Any other non-success
                         raise MConnectCommError(
-                            f"Command {action} failed with {resp.status}"
+                            f"Command {action} failed {resp.status}: {text}"
                         )
             except asyncio.CancelledError:
                 raise
-            except Exception as e:
-                raise MConnectCommError(f"Command {action} failed: {e}") from e
+            except asyncio.TimeoutError:
+                raise MConnectCommError(f"Command {action} timeout")
+            except ClientError as e:
+                raise MConnectCommError(f"Command {action} connection error: {e}") from e
 
         async def _fetch_position() -> int | None:
             """
@@ -582,22 +618,40 @@ class MConnectClient:
             by scanning /rooms for this device_id and its OpenClose value_id.
             """
             rooms_url = f"{BASE_URL}/rooms"
-            headers = {
-                "Authorization": f"Bearer {access}",
-                "Accept": "application/json",
-            }
+            headers = _build_headers(self._user_agent, self._timezone)
+            headers["Authorization"] = f"Bearer {access}"
+            headers["Accept"] = "application/json"
+
             try:
-                async with self._session.get(rooms_url, headers=headers) as resp:
+                # log request
+                self._log_api_call("GET", rooms_url, headers=headers)
+
+                async with self._session.get(
+                    rooms_url, headers=headers, timeout=ClientTimeout(total=15)
+                ) as resp:
+                    txt = await resp.text()
+
+                    # log response
+                    self._log_api_call(
+                        "GET",
+                        rooms_url,
+                        response_status=resp.status,
+                        response_text=txt,
+                    )
+
                     if resp.status == 401:
                         raise MConnectAuthError("Unauthorized")
                     if resp.status != 200:
-                        txt = await resp.text()
                         raise MConnectCommError(
                             f"Read state failed: {resp.status} {txt}"
                         )
                     data = await resp.json()
             except asyncio.CancelledError:
                 raise
+            except asyncio.TimeoutError:
+                raise MConnectCommError("Read state timeout")
+            except ClientError as e:
+                raise MConnectCommError(f"Read state connection error: {e}") from e
             except Exception as e:
                 raise MConnectCommError(f"Read state failed: {e}") from e
 
@@ -611,7 +665,6 @@ class MConnectClient:
                         continue
                     for v in dev.get("values") or []:
                         if (v.get("type") or "").lower() == "values.types.openclose":
-                            # value is 0..100 according to your dump
                             return (
                                 int(v.get("value"))
                                 if v.get("value") is not None
@@ -667,8 +720,8 @@ class MConnectClient:
             p1 = await _fetch_position()
             if p1 is None:
                 raise MConnectCommError("stop: unable to read current position (p1)")
-
-            # short delay to let position advance a bit; tune as needed
+            
+            # short delay to let position advance
             await asyncio.sleep(0.6)
 
             p2 = await _fetch_position()
@@ -787,99 +840,191 @@ class MConnectClient:
 
     async def async_exchange_home_token(self, access_token: str, home_id: str) -> dict:
         """
-        Exchange a user access token for a home-scoped token.
+        Exchange a user access token for a home-scoped token, with brief retries
+        on transient errors (429/5xx/timeouts/connection issues).
         """
-        LOGGER.info(f"Logging in to home {home_id}")
-
         headers = _build_headers(self._user_agent, self._timezone)
-        # headers["Authorization"] = f"Bearer {access_token}"
         payload = {
             "grant_type": "authorization",
             "code": access_token,
             "home_id": home_id,
         }
 
-        # Log home token exchange request
-        self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)
+        attempts = 3
+        for i in range(attempts):
+            try:
+                self._log_api_call("POST", HOMES_TOKEN_URL, payload, headers)
+                async with self._session.post(
+                    HOMES_TOKEN_URL, json=payload, headers=headers, timeout=ClientTimeout(total=15)
+                ) as resp:
+                    text = await resp.text()
+                    self._log_api_call("POST", HOMES_TOKEN_URL, response_status=resp.status, response_text=text)
 
-        async with self._session.post(
-            HOMES_TOKEN_URL,
-            json=payload,
-            headers=headers,
-            timeout=ClientTimeout(total=15),
-        ) as resp:
-            response_text = await resp.text()
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "access": data.get("access_token"),
+                            "refresh": data.get("refresh_token"),
+                            "expires_in": data.get("expires_in"),
+                            "expires_at": None,
+                        }
 
-            # Log home token exchange response
-            self._log_api_call(
-                "POST",
-                HOMES_TOKEN_URL,
-                response_status=resp.status,
-                response_text=response_text,
-            )
+                    if resp.status == 401:
+                        # Access token invalid — do not retry
+                        raise MConnectAuthError(f"Failed to exchange home token: {resp.status} {text}")
+                    if resp.status == 429:
+                        # Rate limited — respect Retry-After when present
+                        ra = resp.headers.get("Retry-After")
+                        try:
+                            wait = float(ra) if ra is not None else (1.5 * (i + 1))
+                        except ValueError:
+                            wait = 1.5 * (i + 1)
+                        if i < attempts - 1:
+                            await asyncio.sleep(min(wait, 10))
+                            continue
+                        raise MConnectRateLimitError("Rate limited during home token exchange", retry_after=wait)
+                    if 500 <= resp.status < 600:
+                        # Gateway/server — retry
+                        if i < attempts - 1:
+                            await asyncio.sleep(1.5 * (i + 1))
+                            continue
+                        raise MConnectServerError(f"Failed to exchange home token: {resp.status} {text}")
 
-            if resp.status != 200:
-                raise MConnectCommError(
-                    f"Failed to exchange home token: {resp.status} {response_text}"
-                )
-            data = await resp.json()
-            return {
-                "access": data.get("access_token"),
-                "refresh": data.get("refresh_token"),
-                "expires_in": data.get("expires_in"),
-                "expires_at": None,
-            }
+                    # Other non-200 (4xx) — don't retry
+                    raise MConnectCommError(f"Failed to exchange home token: {resp.status} {text}")
+
+            except asyncio.TimeoutError:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError("Home token exchange timeout")
+            except ClientError as e:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError(f"Home token exchange connection error: {e}")
+            
+        raise MConnectCommError(f"Home token exchange failed after {attempts} retries")
 
     async def async_refresh_user_tokens(self, refresh_token: str) -> dict:
         """
-        Refresh the user-level access token.
+        Refresh the user-level access token, with brief retries on transient errors.
         """
         headers = _build_headers(self._user_agent, self._timezone)
         payload = {"refresh_token": refresh_token}
-        async with self._session.post(
-            LOGIN_URL,
-            json=payload,
-            headers=headers,
-            timeout=ClientTimeout(total=15),
-        ) as resp:
-            text = await resp.text()
-            if resp.status != 200:
-                raise MConnectAuthError(
-                    f"User token refresh failed: {resp.status} {text}"
-                )
-            data = await resp.json()
-            return {
-                "access": data.get("access_token"),
-                "refresh": data.get("refresh_token", refresh_token),
-                "expires_in": data.get("expires_in"),
-                "expires_at": None,
-            }
+
+        attempts = 3
+        for i in range(attempts):
+            try:
+                async with self._session.post(
+                    LOGIN_URL, json=payload, headers=headers, timeout=ClientTimeout(total=15)
+                ) as resp:
+                    text = await resp.text()
+
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "access": data.get("access_token"),
+                            "refresh": data.get("refresh_token", refresh_token),
+                            "expires_in": data.get("expires_in"),
+                            "expires_at": None,
+                        }
+
+                    if resp.status == 401:
+                        # Refresh token invalid — do not retry
+                        raise MConnectAuthError(f"User token refresh failed: {resp.status} {text}")
+                    if resp.status == 429:
+                        ra = resp.headers.get("Retry-After")
+                        try:
+                            wait = float(ra) if ra is not None else (1.5 * (i + 1))
+                        except ValueError:
+                            wait = 1.5 * (i + 1)
+                        if i < attempts - 1:
+                            await asyncio.sleep(min(wait, 10))
+                            continue
+                        raise MConnectRateLimitError("Rate limited during user refresh", retry_after=wait)
+                    if 500 <= resp.status < 600:
+                        if i < attempts - 1:
+                            await asyncio.sleep(1.5 * (i + 1))
+                            continue
+                        raise MConnectServerError(f"User token refresh failed: {resp.status} {text}")
+
+                    # Other non-200 (4xx) — don't retry
+                    raise MConnectCommError(f"User token refresh failed: {resp.status} {text}")
+
+            except asyncio.TimeoutError:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError("User token refresh timeout")
+            except ClientError as e:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError(f"User token refresh connection error: {e}")
+            
+        raise MConnectCommError(f"User token refresh failed after {attempts} retries")
+
 
     async def async_refresh_home_tokens(self, home_id: str, refresh_token: str) -> dict:
         """
-        Refresh the home-scoped access token.
+        Refresh the home-scoped access token, with brief retries on transient errors.
         """
         headers = _build_headers(self._user_agent, self._timezone)
         payload = {"grant_type": "refresh_token", "refresh_token": refresh_token}
-        async with self._session.post(
-            HOMES_TOKEN_URL,
-            json=payload,
-            headers=headers,
-            timeout=ClientTimeout(total=15),
-        ) as resp:
-            text = await resp.text()
-            if resp.status != 200:
-                raise MConnectAuthError(
-                    f"Home token refresh failed: {resp.status} {text}"
-                )
-            data = await resp.json()
-            return {
-                "access": data.get("access_token"),
-                "refresh": data.get("refresh_token", refresh_token),
-                "expires_in": data.get("expires_in"),
-                "expires_at": None,
-                "home_id": home_id,
-            }
+
+        attempts = 3
+        for i in range(attempts):
+            try:
+                async with self._session.post(
+                    HOMES_TOKEN_URL, json=payload, headers=headers, timeout=ClientTimeout(total=15)
+                ) as resp:
+                    text = await resp.text()
+
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "access": data.get("access_token"),
+                            "refresh": data.get("refresh_token", refresh_token),
+                            "expires_in": data.get("expires_in"),
+                            "expires_at": None,
+                            "home_id": home_id,
+                        }
+
+                    if resp.status == 401:
+                        # Refresh token invalid/expired — do not retry
+                        raise MConnectAuthError(f"Home token refresh failed: {resp.status} {text}")
+                    if resp.status == 429:
+                        ra = resp.headers.get("Retry-After")
+                        try:
+                            wait = float(ra) if ra is not None else (1.5 * (i + 1))
+                        except ValueError:
+                            wait = 1.5 * (i + 1)
+                        if i < attempts - 1:
+                            await asyncio.sleep(min(wait, 10))
+                            continue
+                        raise MConnectRateLimitError("Rate limited during home refresh", retry_after=wait)
+                    if 500 <= resp.status < 600:
+                        if i < attempts - 1:
+                            await asyncio.sleep(1.5 * (i + 1))
+                            continue
+                        raise MConnectServerError(f"Home token refresh failed: {resp.status} {text}")
+
+                    # Other non-200 (4xx) — don't retry
+                    raise MConnectCommError(f"Home token refresh failed: {resp.status} {text}")
+
+            except asyncio.TimeoutError:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError("Home token refresh timeout")
+            except ClientError as e:
+                if i < attempts - 1:
+                    await asyncio.sleep(1.5 * (i + 1))
+                    continue
+                raise MConnectCommError(f"Home token refresh connection error: {e}")
+        raise MConnectCommError(f"Home token refresh failed after {attempts} retries")
+
 
     async def async_list_scenes(self, tokens: dict) -> list[dict]:
         """Return list of scenes; each should include at least 'id' and 'name'."""
