@@ -64,6 +64,9 @@ class MConnectEntity(CoordinatorEntity):
     def _handle_coordinator_update(self) -> None:
         for item in self.coordinator.data.get(self._kind, []):
             if item.id == self._obj.id:
+                # Preserve a recent optimistic state so a stale poll can't clobber it.
+                if hasattr(self._obj, "state") and item.state != self._obj.state:
+                    item.state = self._obj.state
                 self._obj = item
                 break
         self.async_write_ha_state()
