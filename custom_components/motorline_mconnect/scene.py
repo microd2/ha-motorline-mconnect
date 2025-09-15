@@ -63,7 +63,9 @@ class MConnectScene(Scene):
             LOGGER.error("MConnectScene: missing client or scene_id")
             return
 
-        await self.coordinator.async_execute_with_retry(client.async_run_scene, scene_id)
+        await self.coordinator.async_execute_with_retry(
+            client.async_run_scene, scene_id
+        )
         # Scenes are momentary; no state to update. Optionally refresh devices:
         await sleep(1)  # 0.5–1.0s works well in practice
         await self.coordinator.async_request_refresh()

@@ -133,9 +133,7 @@ class ConfigFlow(config_entry_oauth2_flow.AbstractOAuth2FlowHandler, domain=DOMA
             url = result.get("url")
             if url:
                 self.logger.debug("AUTH URL = %s", url)
-                self.logger.debug(
-                    "AUTH URL QUERY = %s", parse_qs(urlparse(url).query)
-                )
+                self.logger.debug("AUTH URL QUERY = %s", parse_qs(urlparse(url).query))
             else:
                 self.logger.warning(
                     "No auth URL present in pick_implementation result: %s", result
