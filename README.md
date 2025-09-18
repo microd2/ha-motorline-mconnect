@@ -121,12 +121,8 @@ This is just a call-back url redirector that allows Gmail to point back to your 
 -	Click Continue
 6.	Follow my.home-assistant.io steps to redirect your Gmail login to your local HA instance.
 -	Find the URL that your HA instance is listening on.
-- i.	Open a new browser tab and log in to your Home Assistant 
-- ii.	Go to Settings → System → Network → Home Assistant URL
 
 	![Screenshot](readme_images/assistanturl.png)
-
-- iii.	Click Copy Link under **Local Network**
 -	Go back to the my.home-assistant.io tab and paste URL that you just copied
 
 	![Screenshot](readme_images/mha2.png)
