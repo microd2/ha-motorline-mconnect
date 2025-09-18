@@ -1,5 +1,3 @@
-
-UNDER DEVELOPMENT
 # Home Assistant Custom Integration: Motorline MCONNECT
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-blue.svg)](https://hacs.xyz/)
