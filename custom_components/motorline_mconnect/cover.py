@@ -25,8 +25,10 @@ class MConnectCover(MConnectEntity, CoverEntity):
             CoverEntityFeature.OPEN
             | CoverEntityFeature.CLOSE
             | CoverEntityFeature.STOP
-            | CoverEntityFeature.SET_POSITION
         )
+        # Add SET_POSITION only if the device supports it (not for gates)
+        if getattr(obj, "supports_position", True):
+            feats |= CoverEntityFeature.SET_POSITION
         self._attr_supported_features = feats
         self._last_target: int | None = None
         self._poke_handles: list[asyncio.TimerHandle] = []
@@ -78,6 +80,10 @@ class MConnectCover(MConnectEntity, CoverEntity):
         )
 
     async def async_set_cover_position(self, **kwargs) -> None:
+        # Only allow position setting if the device supports it
+        if not getattr(self._obj, "supports_position", True):
+            return
+
         vid = self._obj.command_value_id
         if not vid:
             return
@@ -99,18 +105,22 @@ class MConnectCover(MConnectEntity, CoverEntity):
         vid = self._obj.command_value_id
         if not vid:
             return
-        # If HA just started and we have no memory, fall back to current position.
-        target = self._last_target
-        if target is None:
-            target = int(self._obj.position or 0)
-            self._last_target = target
+
+        if not getattr(self._obj, "supports_position", True):
+            # For gates: send inverse position to stop movement
+            # If gate was opening (target=100), send close (0) to stop
+            # If gate was closing (target=0), send open (100) to stop
+            stop_position = 0 if self._last_target == 100 else 100
+        else:
+            # For blinds/shutters: send same position (original behavior)
+            stop_position = self._last_target if self._last_target is not None else 0
 
         await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",
             value_id=vid,
-            position=int(target),
+            position=stop_position,
         )
         # Make the UI snap to the stopped percent
         await self.coordinator.async_refresh()
