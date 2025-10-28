@@ -458,9 +458,16 @@ class MConnectClient:
                 for v in values or []
             )
 
+            # Check if this is a gate/door (may not support position or stop)
             is_gate = (
                 ("gate" in icon)
                 or ("door" in icon)
+            )
+
+            # Check if device has only_open_close attribute (doesn't support stop)
+            has_only_open_close = any(
+                v.get("attributes", {}).get("only_open_close") is True
+                for v in values or []
             )
 
             is_cover = (
@@ -506,6 +513,7 @@ class MConnectClient:
                     command_value_id=oc_id,
                     travel_time_s=tt,
                     supports_position=not is_gate,  # Gates don't support positions
+                    supports_stop=not has_only_open_close,  # Devices with only_open_close don't support stop
                 )
                 covers.append(cover)
                 continue

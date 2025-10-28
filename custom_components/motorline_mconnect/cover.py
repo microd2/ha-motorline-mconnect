@@ -24,8 +24,10 @@ class MConnectCover(MConnectEntity, CoverEntity):
         feats = (
             CoverEntityFeature.OPEN
             | CoverEntityFeature.CLOSE
-            | CoverEntityFeature.STOP
         )
+        # Add STOP only if the device supports it
+        if getattr(obj, "supports_stop", True):
+            feats |= CoverEntityFeature.STOP
         # Add SET_POSITION only if the device supports it (not for gates)
         if getattr(obj, "supports_position", True):
             feats |= CoverEntityFeature.SET_POSITION
@@ -102,6 +104,10 @@ class MConnectCover(MConnectEntity, CoverEntity):
         )
 
     async def async_stop_cover(self, **kwargs) -> None:
+        # Only allow stop if the device supports it
+        if not getattr(self._obj, "supports_stop", True):
+            return
+
         vid = self._obj.command_value_id
         if not vid:
             return

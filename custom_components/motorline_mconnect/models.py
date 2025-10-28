@@ -43,5 +43,6 @@ class CoverDevice(BaseDeviceEntity):
     # No percentage in your dump, so position is None
     position: int | None = None
     command_value_id: str | None = None
-    travel_time_s: int | None = None  # <— add
-    supports_position: bool = True  # always true for MConnect shutters
+    travel_time_s: int | None = None
+    supports_position: bool = True  # Gates don't support positions
+    supports_stop: bool = True  # Some gates don't support stop
