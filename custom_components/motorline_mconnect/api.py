@@ -452,10 +452,23 @@ class MConnectClient:
             )
 
             # --- classify device type ---
+            # Check if device has OpenClose values (covers/gates/shutters)
+            has_openclose_values = any(
+                "OpenClose" in (v.get("type") or "")
+                for v in values or []
+            )
+
+            is_gate = (
+                ("gate" in icon)
+                or ("door" in icon)
+            )
+
             is_cover = (
                 ("devices.types.shutter" in dev_type)
                 or ("shutter" in icon)
                 or ("blind" in icon)
+                or is_gate
+                or has_openclose_values
             )
             # Some lights arrive as SWITCH type but have a bulb/lamp icon
             is_light = (
@@ -492,7 +505,7 @@ class MConnectClient:
                     position=pos,
                     command_value_id=oc_id,
                     travel_time_s=tt,
-                    supports_position=True,
+                    supports_position=not is_gate,  # Gates don't support positions
                 )
                 covers.append(cover)
                 continue
