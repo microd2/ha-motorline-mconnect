@@ -111,18 +111,20 @@ class MConnectCover(MConnectEntity, CoverEntity):
         vid = self._obj.command_value_id
         if not vid:
             return
-
-        # Send the same position that was last targeted to stop movement
-        stop_position = self._last_target if self._last_target is not None else 0
+        # If HA just started and we have no memory, fall back to current position.
+        target = self._last_target
+        if target is None:
+            target = int(self._obj.position or 0)
+            self._last_target = target
 
         await self.coordinator.async_execute_with_retry(
             self.client.async_command,
             self._obj.device_id,
             "set_position",
             value_id=vid,
-            position=stop_position,
+            position=int(target),
         )
-        # Refresh to get updated position/status
+        # Make the UI snap to the stopped percent
         await self.coordinator.async_refresh()
         self._schedule_poke_refresh((0.5, 1.0, 2.0))
 
