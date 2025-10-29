@@ -21,10 +21,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
 
     def __init__(self, coordinator, entry: ConfigEntry, obj: CoverDevice):
         super().__init__(coordinator, entry, obj, kind="covers")
-        feats = (
-            CoverEntityFeature.OPEN
-            | CoverEntityFeature.CLOSE
-        )
+        feats = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
         # Add STOP only if the device supports it
         if getattr(obj, "supports_stop", True):
             feats |= CoverEntityFeature.STOP

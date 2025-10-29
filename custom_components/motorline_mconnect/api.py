@@ -454,15 +454,11 @@ class MConnectClient:
             # --- classify device type ---
             # Check if device has OpenClose values (covers/gates/shutters)
             has_openclose_values = any(
-                "OpenClose" in (v.get("type") or "")
-                for v in values or []
+                "OpenClose" in (v.get("type") or "") for v in values or []
             )
 
             # Check if this is a gate/door (may not support position or stop)
-            is_gate = (
-                ("gate" in icon)
-                or ("door" in icon)
-            )
+            is_gate = ("gate" in icon) or ("door" in icon)
 
             # Check if device has only_open_close attribute (doesn't support stop)
             has_only_open_close = any(
