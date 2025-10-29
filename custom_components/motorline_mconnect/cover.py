@@ -112,14 +112,8 @@ class MConnectCover(MConnectEntity, CoverEntity):
         if not vid:
             return
 
-        if not getattr(self._obj, "supports_position", True):
-            # For gates: send inverse position to stop movement
-            # If gate was opening (target=100), send close (0) to stop
-            # If gate was closing (target=0), send open (100) to stop
-            stop_position = 0 if self._last_target == 100 else 100
-        else:
-            # For blinds/shutters: send same position (original behavior)
-            stop_position = self._last_target if self._last_target is not None else 0
+        # Send the same position that was last targeted to stop movement
+        stop_position = self._last_target if self._last_target is not None else 0
 
         await self.coordinator.async_execute_with_retry(
             self.client.async_command,
@@ -128,7 +122,7 @@ class MConnectCover(MConnectEntity, CoverEntity):
             value_id=vid,
             position=stop_position,
         )
-        # Make the UI snap to the stopped percent
+        # Refresh to get updated position/status
         await self.coordinator.async_refresh()
         self._schedule_poke_refresh((0.5, 1.0, 2.0))
 
