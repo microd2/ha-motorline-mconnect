@@ -15,7 +15,11 @@ class MConnectEntity(CoordinatorEntity):
         self._kind = kind
         self._obj = obj
         self._attr_unique_id = obj.id
-        self._attr_name = f"{obj.device.room_name} {obj.name}"
+        room_name = obj.device.room_name
+        if room_name:
+            self._attr_name = f"{room_name} {obj.name}"
+        else:
+            self._attr_name = obj.name
         # self._attr_name = f"{obj.name}"
         self._attr_has_entity_name = False
 
