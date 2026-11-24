@@ -46,3 +46,4 @@ class CoverDevice(BaseDeviceEntity):
     travel_time_s: int | None = None
     supports_position: bool = True  # Gates don't support positions
     supports_stop: bool = True  # Some gates don't support stop
+    pedestrian_value_id: str | None = None
