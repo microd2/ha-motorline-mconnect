@@ -13,7 +13,7 @@ from .coordinator import MConnectCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE]
+PLATFORMS = [Platform.COVER, Platform.SWITCH, Platform.LIGHT, Platform.SCENE, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
